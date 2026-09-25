@@ -247,3 +247,4 @@ export async function marginQuote(t: TenantDb, raw: unknown) {
   if (!margin) throw new HttpError(409, "SKU currency differs from fee schedule currency");
   return { skuId: sku.id, currency: sku.currency, ...margin };
 }
+export * from "./order-lines";
