@@ -22,6 +22,7 @@ export const assetKind = pgEnum("asset_kind", [
   "product_image",
   "document",
 ]);
+export const assetUploadStatus = pgEnum("asset_upload_status", ["pending", "ready", "rejected"]);
 export const virusScanStatus = pgEnum("virus_scan_status", [
   "pending",
   "clean",

@@ -7,6 +7,8 @@ import { withTenant } from "@/db/tenant";
 import { brands } from "@/db/schema";
 import { setSessionSourceForTests } from "@/modules/auth";
 import { tenantRoute } from "@/modules/tenancy";
+import { setStorageProviderForTests } from "@/modules/assets";
+import { fakeStorage } from "../fake-storage";
 import { FakeSession } from "../fake-session";
 import { createTenant } from "../helpers";
 import { callRoute, tenantRoutes, unscopedTenantRoutes, type Handler } from "./routes";
@@ -17,10 +19,14 @@ let B: Awaited<ReturnType<typeof createTenant>>;
 
 beforeAll(async () => {
   setSessionSourceForTests(session);
+  setStorageProviderForTests(fakeStorage);
   A = await createTenant("Tenant A");
   B = await createTenant("Tenant B");
 });
-afterAll(() => setSessionSourceForTests(null));
+afterAll(() => {
+  setSessionSourceForTests(null);
+  setStorageProviderForTests(null);
+});
 beforeEach(() => session.actAs(A.owner));
 
 const call = callRoute;

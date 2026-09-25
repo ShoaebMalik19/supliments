@@ -1,9 +1,9 @@
 # CLAUDE.md
 
-Private-label supplement commerce platform. Multi-tenant SaaS: brand owners (orgs)
-sell our catalog under their label; we route orders to manufacturers.
-Architecture is decided in `docs/PLATFORM-DISCOVERY.md` — do not re-derive it.
-Read only the section you need (§6 schema, §7 tenancy, §16 scope, §17 roadmap).
+Private-label supplement commerce platform. Multi-tenant SaaS: brand owners (orgs) sell our
+catalog under their label; we route orders to manufacturers. Architecture is decided in
+`docs/PLATFORM-DISCOVERY.md` — do not re-derive it; read only the section you need
+(§6 schema, §7 tenancy, §16 scope, §17 roadmap).
 
 ## Stack (decided)
 
@@ -13,9 +13,8 @@ Read only the section you need (§6 schema, §7 tenancy, §16 scope, §17 roadma
   Table DDL is generated (`npm run db:generate`); RLS, roles, triggers and
   functions are hand-written custom SQL migrations (`npm run db:custom -- --name=x`).
   CI fails if the TS schema and generated migrations drift.
-- Job queue: `job_queue` table (attempts, backoff, `dead` = DLQ), drained by
-  `/api/cron/jobs` (Vercel cron, `CRON_SECRET`). No external queue vendor.
-  Enqueue inside the same transaction as the state change (outbox semantics).
+- Job queue: `job_queue` table (attempts, backoff, `dead` = DLQ), drained by `/api/cron/jobs`
+  (Vercel cron, `CRON_SECRET`). Enqueue in the same transaction as the state change.
 - Vitest against a real Postgres (`DATABASE_URL`, default local `app_test`).
 
 ## Commands
@@ -25,8 +24,8 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
 
 ## Module boundaries
 
-`src/modules/<name>` — auth · tenancy · audit · jobs · catalog · branding ·
-integrations · orders · fulfillment · billing · notifications · admin.
+`src/modules/<name>` — auth · tenancy · audit · jobs · catalog · assets · branding · integrations
+· orders · fulfillment · billing · notifications · admin.
 
 - A module only reads/writes its own tables. Cross-module access goes through
   the other module's exported functions (`src/modules/<name>/index.ts`).
@@ -47,8 +46,7 @@ integrations · orders · fulfillment · billing · notifications · admin.
   if a table lacks RLS or an org_id table lacks the policy.
 - Not FORCED: the table-owner connection role is the privileged path (Supabase's
   `postgres` cannot create BYPASSRLS roles). `app_user` is NOLOGIN, non-owner, no bypass.
-- Supabase `anon`/`authenticated` get no grants on `public` (no PostgREST exposure).
-- Child tables carry their own denormalized `org_id` so RLS never needs joins.
+- `anon`/`authenticated` get no grants on `public`. Child tables carry their own `org_id`.
 - `src/db/privileged.ts` (bypasses RLS) may only be imported by modules auth, tenancy, admin,
   jobs, audit, `catalog/admin.ts` (catalog writes) and tests (ESLint). Every privileged
   cross-tenant action writes an AuditLog row.
@@ -68,10 +66,9 @@ integrations · orders · fulfillment · billing · notifications · admin.
 
 ## Adapter rule
 
-- Every external vendor (Supabase Auth/Storage, Shopify, payment, manufacturer,
-  email, carrier) is called only from `src/adapters/<vendor>/`, behind an interface
-  owned by the consuming module (e.g. `AuthProvider`, `FulfillmentProvider`,
-  `PaymentProvider`). Modules never import vendor SDKs directly.
+- Every external vendor (Supabase Auth/Storage, Shopify, payment, manufacturer, email,
+  carrier) is called only from `src/adapters/<vendor>/`, behind an interface owned by the
+  consuming module (`AuthProvider`, `StorageProvider`, …). Modules never import vendor SDKs.
 - The spreadsheet fulfillment adapter lives in `src/adapters/manual`; nothing outside
   it may know about columns, filenames or email (§0.1).
 - `PaymentProvider`: only `manual` in v1; charges are `pending_external` rows + ledger.
@@ -82,8 +79,7 @@ integrations · orders · fulfillment · billing · notifications · admin.
 - Append-only tables (audit_logs, order_events, ledger_entries, wallet_transactions,
   inventory_ledger) have a trigger rejecting UPDATE/DELETE.
 - `users.id` = Supabase `auth.users.id` (no FK: schema must run on plain Postgres).
-- Platform admins: `platform_admins` table, independent of org roles.
-- Roles: owner · admin · member · designer · read_only.
+- Roles: owner · admin · member · designer · read_only. Platform admins: `platform_admins`.
 
 ## Choices made where the brief was ambiguous
 
@@ -92,8 +88,12 @@ integrations · orders · fulfillment · billing · notifications · admin.
   (no `org_id`, no tenant grants except read-only catalog).
 - `job_queue`/`outbox_events` carry nullable `org_id`; tenants may only insert.
 - Payment/charge status adds `pending_external` (§0.1).
+- Assets: one private bucket (`ASSETS_BUCKET`), signed URLs only (download TTL 60s). Keys are
+  server-generated `org/{orgId}/{assetId}/{random}` (DB check; platform: `platform/...`).
+  `upload_status` pending → ready | rejected (terminal); ready only after magic bytes + exact
+  size match. Tenants may UPDATE only upload_status/width/height/checksum. Virus scan: stub.
 
 ## Working rules
 
-- No comments that restate code. No UI component library yet.
-- Commit per logical step. Tests for isolation and constraints, not trivial code.
+- No comments that restate code. No UI component library yet. Commit per logical step.
+  Tests for isolation and constraints, not trivial code.

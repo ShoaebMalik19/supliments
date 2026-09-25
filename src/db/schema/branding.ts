@@ -12,7 +12,14 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { currency, currencyCheck, minor, pk, timestamps, ts } from "./_columns";
-import { assetKind, brandProductStatus, brandStatus, labelStatus, virusScanStatus } from "./enums";
+import {
+  assetKind,
+  assetUploadStatus,
+  brandProductStatus,
+  brandStatus,
+  labelStatus,
+  virusScanStatus,
+} from "./enums";
 import { orgId, organizations, users } from "./tenancy";
 import { catalogProducts, fulfillmentCenters, labelTemplates, skus } from "./catalog";
 
@@ -29,12 +36,20 @@ export const assets = pgTable(
     width: integer("width"),
     height: integer("height"),
     checksum: text("checksum"),
+    uploadStatus: assetUploadStatus("upload_status").notNull().default("pending"),
     virusScanStatus: virusScanStatus("virus_scan_status").notNull().default("pending"),
     uploadedBy: uuid("uploaded_by").references(() => users.id),
     isPublic: boolean("is_public").notNull().default(false),
     ...timestamps,
   },
-  (t) => [unique().on(t.bucket, t.storageKey), index().on(t.orgId)],
+  (t) => [
+    unique().on(t.bucket, t.storageKey),
+    index().on(t.orgId),
+    check(
+      "assets_storage_key_scoped",
+      sql`(${t.orgId} IS NULL AND ${t.storageKey} LIKE 'platform/%') OR ${t.storageKey} LIKE 'org/' || ${t.orgId}::text || '/%'`,
+    ),
+  ],
 );
 
 export const brands = pgTable(

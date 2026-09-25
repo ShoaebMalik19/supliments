@@ -22,6 +22,20 @@
       "when": 1790350321640,
       "tag": "0002_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790351331355,
+      "tag": "0003_asset_upload_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790351332101,
+      "tag": "0004_asset_update_grants",
+      "breakpoints": true
     }
   ]
 }
