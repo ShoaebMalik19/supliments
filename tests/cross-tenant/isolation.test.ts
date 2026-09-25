@@ -9,7 +9,7 @@ import { setSessionSourceForTests } from "@/modules/auth";
 import { tenantRoute } from "@/modules/tenancy";
 import { FakeSession } from "../fake-session";
 import { createTenant } from "../helpers";
-import { tenantRoutes, type Handler } from "./routes";
+import { callRoute, tenantRoutes, unscopedTenantRoutes, type Handler } from "./routes";
 
 const session = new FakeSession();
 let A: Awaited<ReturnType<typeof createTenant>>;
@@ -23,14 +23,7 @@ beforeAll(async () => {
 afterAll(() => setSessionSourceForTests(null));
 beforeEach(() => session.actAs(A.owner));
 
-async function call(handler: Handler, method: string, url: string, id: string, body?: unknown) {
-  const req = new Request(url, {
-    method,
-    headers: { "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  return handler(req, { params: Promise.resolve({ id }) });
-}
+const call = callRoute;
 
 async function expectIsolated(
   handler: Handler,
@@ -77,6 +70,12 @@ describe.each(tenantRoutes)("cross-tenant: $file", (route) => {
   });
 });
 
+describe.each(unscopedTenantRoutes)("cross-tenant (unscoped): $file", (route) => {
+  it(route.reason, async () => {
+    await route.check({ A, B, actAs: (u) => session.actAs(u) });
+  });
+});
+
 describe("registry completeness", () => {
   it("every API route touching tenant data is registered in routes.ts", () => {
     const walk = (dir: string): string[] =>
@@ -88,7 +87,7 @@ describe("registry completeness", () => {
     const tenantFiles = walk(join(root, "src/app/api"))
       .filter((f) => /tenantRoute|withTenant/.test(readFileSync(f, "utf8")))
       .map((f) => relative(root, f));
-    const registered = new Set(tenantRoutes.map((r) => r.file));
+    const registered = new Set([...tenantRoutes, ...unscopedTenantRoutes].map((r) => r.file));
     expect(tenantFiles.filter((f) => !registered.has(f))).toEqual([]);
   });
 });
