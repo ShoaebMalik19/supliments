@@ -6,6 +6,7 @@ Architecture is decided in `docs/PLATFORM-DISCOVERY.md` — do not re-derive it.
 Read only the section you need (§6 schema, §7 tenancy, §16 scope, §17 roadmap).
 
 ## Stack (decided)
+
 - Next.js 15 App Router + TypeScript strict. One deployable; admin lives at `/admin`.
 - Supabase: Postgres, Auth, Storage. Vercel hosting.
 - Drizzle ORM. Schema in `src/db/schema/*.ts`; migrations in `db/migrations`.
@@ -18,20 +19,24 @@ Read only the section you need (§6 schema, §7 tenancy, §16 scope, §17 roadma
 - Vitest against a real Postgres (`DATABASE_URL`, default local `app_test`).
 
 ## Commands
+
 `npm run typecheck` · `npm run lint` · `npm test` · `npm run build` · `npm run db:migrate`
 Tests need Postgres: `service postgresql start` locally; CI uses a service container.
 
 ## Module boundaries
+
 `src/modules/<name>` — auth · tenancy · audit · jobs · catalog · branding ·
 integrations · orders · fulfillment · billing · notifications · admin.
+
 - A module only reads/writes its own tables. Cross-module access goes through
   the other module's exported functions (`src/modules/<name>/index.ts`).
 - `src/app` (routes/pages) is thin: resolve context, call a module, map to HTTP.
 - `src/db/schema` is shared type definitions only — no logic.
 
 ## Tenancy rule (non-negotiable)
+
 - `org_id` is resolved server-side: auth user → membership → org. Never taken from
-  body, URL or header. Active org may be *selected* by cookie only when the value
+  body, URL or header. Active org may be _selected_ by cookie only when the value
   matches one of the user's memberships (validated server-side).
 - Tenant data is accessed only via `withTenant(orgId, fn)` (`src/db/tenant.ts`):
   it opens a transaction, `SET LOCAL ROLE app_user`, sets `app.current_org`, and
@@ -49,6 +54,7 @@ integrations · orders · fulfillment · billing · notifications · admin.
   API route file uses `withTenant` and is not registered. Extend this suite forever.
 
 ## Money rule (non-negotiable)
+
 - Integer minor units (`bigint`, column suffix `_minor`) + ISO-4217 `currency`
   (`char(3)`, uppercase check) on every amount. Never floats, never `numeric` money.
 - `tests/schema.test.ts` fails if any `*_minor` column lacks a currency column in
@@ -56,6 +62,7 @@ integrations · orders · fulfillment · billing · notifications · admin.
 - In TS use `Money = { amountMinor: bigint; currency: string }` (`src/lib/money.ts`).
 
 ## Adapter rule
+
 - Every external vendor (Supabase Auth/Storage, Shopify, payment, manufacturer,
   email, carrier) is called only from `src/adapters/<vendor>/`, behind an interface
   owned by the consuming module (e.g. `AuthProvider`, `FulfillmentProvider`,
@@ -66,6 +73,7 @@ integrations · orders · fulfillment · billing · notifications · admin.
   `pending_external` rows + ledger entries.
 
 ## Data conventions
+
 - UUID v7 PKs via SQL `uuid_generate_v7()`. `created_at`/`updated_at` timestamptz.
 - Append-only tables (audit_logs, order_events, ledger_entries, wallet_transactions,
   inventory_ledger) have a trigger rejecting UPDATE/DELETE.
@@ -74,6 +82,7 @@ integrations · orders · fulfillment · billing · notifications · admin.
 - Roles: owner · admin · member · designer · read_only.
 
 ## Choices made where the brief was ambiguous
+
 - Org provisioned at signup (before email verification) with the signer as owner.
 - `dispatch_batches`, `inventory`, `webhook_events`, catalog tables are platform-owned
   (no `org_id`, no tenant grants except read-only catalog).
@@ -81,5 +90,6 @@ integrations · orders · fulfillment · billing · notifications · admin.
 - Payment/charge status adds `pending_external` (§0.1).
 
 ## Working rules
+
 - No comments that restate code. No UI component library yet.
 - Commit per logical step. Tests for isolation and constraints, not trivial code.
