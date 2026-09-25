@@ -148,6 +148,13 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   `shipment:{id}`); pushes never repeat. `fulfillment/platform.ts` is the privileged part.
 - Stuck monitor (hourly job): thresholds in `STUCK_THRESHOLDS`; one open review item per entity.
 
+### Seed + E2E (M6)
+
+- `npm run db:seed` (idempotent): `scripts/seed/platform.ts` = platform data (also used by the
+  E2E test); `scripts/seed.ts` adds a demo org using dev-only disk storage (`.data/storage`).
+- `tests/e2e/order-loop.test.ts` is the definition of "the loop works". Extend it, never weaken
+  it; only session, storage and Shopify HTTP (`tests/fake-shopify.ts`) are faked.
+
 ## Working rules
 
 - No comments that restate code. No UI component library yet. Commit per logical step.
