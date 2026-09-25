@@ -9,6 +9,11 @@ import * as productRoute from "@/app/api/admin/catalog/products/[id]/route";
 import * as skusRoute from "@/app/api/admin/catalog/skus/route";
 import * as skuRoute from "@/app/api/admin/catalog/skus/[id]/route";
 import * as skuCostsRoute from "@/app/api/admin/catalog/skus/[id]/costs/route";
+import * as labelQueueRoute from "@/app/api/admin/labels/route";
+import * as labelApproveRoute from "@/app/api/admin/labels/[id]/approve/route";
+import * as labelRejectRoute from "@/app/api/admin/labels/[id]/reject/route";
+import * as labelTemplatesRoute from "@/app/api/admin/label-templates/route";
+import { placeholderJson, seedLabel } from "./label-helpers";
 
 type Tenant = Awaited<ReturnType<typeof createTenant>>;
 export const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
@@ -122,6 +127,23 @@ export const adminRoutes: AdminRouteCase[] = [
       currency: "USD",
       effectiveFrom: "2026-01-01T00:00:00Z",
     }),
+  },
+  { file: "src/app/api/admin/labels/route.ts", module: labelQueueRoute },
+  {
+    file: "src/app/api/admin/labels/[id]/approve/route.ts",
+    module: labelApproveRoute,
+    id: async (t) => (await seedLabel(t, { status: "submitted" })).label.id,
+  },
+  {
+    file: "src/app/api/admin/labels/[id]/reject/route.ts",
+    module: labelRejectRoute,
+    id: async (t) => (await seedLabel(t, { status: "submitted" })).label.id,
+    body: () => ({ reason: "Logo is too low resolution" }),
+  },
+  {
+    file: "src/app/api/admin/label-templates/route.ts",
+    module: labelTemplatesRoute,
+    body: () => placeholderJson(),
   },
 ];
 

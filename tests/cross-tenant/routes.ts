@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
 import { expect } from "vitest";
-import { assets, brandProducts, brands, catalogProducts, memberships } from "@/db/schema";
+import { assets, brandProducts, brands, catalogProducts, labels, memberships } from "@/db/schema";
 import {
   createAsset,
   createUser,
@@ -22,6 +22,10 @@ import * as brandsRoute from "@/app/api/brands/route";
 import * as brandProductsRoute from "@/app/api/brand-products/route";
 import * as brandProductRoute from "@/app/api/brand-products/[id]/route";
 import * as marginRoute from "@/app/api/margin/route";
+import * as brandProductLabelsRoute from "@/app/api/brand-products/[id]/labels/route";
+import * as labelRoute from "@/app/api/labels/[id]/route";
+import * as labelSubmitRoute from "@/app/api/labels/[id]/submit/route";
+import { seedLabel, seedLabelledBrandProduct } from "../label-helpers";
 
 type Tenant = Awaited<ReturnType<typeof createTenant>>;
 export type Handler = (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
@@ -113,7 +117,47 @@ export const tenantRoutes: TenantRouteCase[] = [
     read: [brandProductRoute.GET],
     mutate: [{ method: "PATCH", handler: brandProductRoute.PATCH, body: { title: "pwned" } }],
   },
+  {
+    file: "src/app/api/brand-products/[id]/labels/route.ts",
+    url: (id) => `http://test/api/brand-products/${id}/labels`,
+    seed: async (b) => (await seedLabelledBrandProduct(b)).brandProduct.id,
+    // A cross-tenant create must neither add a label version nor touch the brand product.
+    snapshot: async (id) => ({
+      brandProduct: (
+        await privilegedDb().select().from(brandProducts).where(eq(brandProducts.id, id))
+      )[0],
+      labels: await privilegedDb().select().from(labels).where(eq(labels.brandProductId, id)),
+    }),
+    read: [brandProductLabelsRoute.GET],
+    mutate: [{ method: "POST", handler: brandProductLabelsRoute.POST, body: {} }],
+  },
+  {
+    file: "src/app/api/labels/[id]/route.ts",
+    url: (id) => `http://test/api/labels/${id}`,
+    seed: async (b) => (await seedLabel(b)).label.id,
+    snapshot: labelSnapshot,
+    read: [labelRoute.GET],
+    mutate: [
+      {
+        method: "PATCH",
+        handler: labelRoute.PATCH,
+        body: { designState: { brandName: "pwned", variantName: "x" } },
+      },
+    ],
+  },
+  {
+    file: "src/app/api/labels/[id]/submit/route.ts",
+    url: (id) => `http://test/api/labels/${id}/submit`,
+    seed: async (b) => (await seedLabel(b)).label.id,
+    snapshot: labelSnapshot,
+    read: [],
+    mutate: [{ method: "POST", handler: labelSubmitRoute.POST }],
+  },
 ];
+
+async function labelSnapshot(id: string) {
+  return (await privilegedDb().select().from(labels).where(eq(labels.id, id)))[0];
+}
 
 async function assetSnapshot(id: string) {
   return (await privilegedDb().select().from(assets).where(eq(assets.id, id)))[0];

@@ -5,6 +5,8 @@ import { eq } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
 import { auditLogs, platformAdmins } from "@/db/schema";
 import { setSessionSourceForTests } from "@/modules/auth";
+import { setStorageProviderForTests } from "@/modules/assets";
+import { fakeStorage } from "./fake-storage";
 import { FakeSession } from "./fake-session";
 import { createTenant, createUser } from "./helpers";
 import { adminRoutes, HTTP_METHODS, prepareAdminRoutes, type AdminRouteCase } from "./admin-routes";
@@ -17,12 +19,16 @@ let admin: Awaited<ReturnType<typeof createUser>>;
 
 beforeAll(async () => {
   setSessionSourceForTests(session);
+  setStorageProviderForTests(fakeStorage);
   owner = await createTenant("Not an admin");
   admin = await createUser();
   await privilegedDb().insert(platformAdmins).values({ userId: admin.id });
   await prepareAdminRoutes();
 });
-afterAll(() => setSessionSourceForTests(null));
+afterAll(() => {
+  setSessionSourceForTests(null);
+  setStorageProviderForTests(null);
+});
 
 function methods(route: AdminRouteCase) {
   const mod = route.module as Record<string, Handler | undefined>;

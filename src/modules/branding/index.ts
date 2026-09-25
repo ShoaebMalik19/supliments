@@ -247,3 +247,19 @@ export async function marginQuote(t: TenantDb, raw: unknown) {
   if (!margin) throw new HttpError(409, "SKU currency differs from fee schedule currency");
   return { skuId: sku.id, currency: sku.currency, ...margin };
 }
+
+export type BrandProductStatus = (typeof brandProducts.$inferSelect)["status"];
+
+/** The bare brand product row of the caller's org (no variants/margins), or null. */
+export async function findBrandProduct(t: TenantDb, id: string) {
+  return t.find(brandProducts, id);
+}
+
+/** Review/label state of a brand product; driven by the labels module. */
+export async function setBrandProductLabelState(
+  t: TenantDb,
+  id: string,
+  values: { status?: BrandProductStatus; primaryMockupAssetId?: string },
+) {
+  return t.update(brandProducts, id, values);
+}

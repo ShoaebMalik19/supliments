@@ -1,17 +1,46 @@
 import { notFound, redirect } from "next/navigation";
 import { withTenant } from "@/db/tenant";
 import { getBrandProduct } from "@/modules/branding";
-import { resolveTenant } from "@/modules/tenancy";
+import { createLabelDraft, listLabels } from "@/modules/labels";
+import { requireTenant, resolveTenant } from "@/modules/tenancy";
 import { formatMinor } from "@/lib/format";
+import { HttpError } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
-export default async function BrandProductPage({ params }: { params: Promise<{ id: string }> }) {
+async function newLabel(form: FormData) {
+  "use server";
+  const id = String(form.get("id"));
+  let target: string;
+  try {
+    const ctx = await requireTenant("label:write");
+    const label = await withTenant(ctx.orgId, (t) => createLabelDraft(ctx, t, id, {}));
+    if (!label) notFound();
+    target = `/labels/${label.id}`;
+  } catch (e) {
+    if (!(e instanceof HttpError) || e.status === 404) throw e;
+    target = `/brand-products/${id}?error=${encodeURIComponent(e.message)}`;
+  }
+  redirect(target);
+}
+
+export default async function BrandProductPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
+}) {
   const ctx = await resolveTenant();
   if (!ctx) redirect("/login");
   const { id } = await params;
-  const bp = await withTenant(ctx.orgId, (t) => getBrandProduct(t, id));
-  if (!bp) notFound();
+  const { error } = await searchParams;
+  const data = await withTenant(ctx.orgId, async (t) => {
+    const bp = await getBrandProduct(t, id);
+    return bp && { bp, labels: await listLabels(t, id) };
+  });
+  if (!data) notFound();
+  const { bp, labels } = data;
   return (
     <main>
       <h1>{bp.title}</h1>
@@ -40,6 +69,21 @@ export default async function BrandProductPage({ params }: { params: Promise<{ i
           ))}
         </tbody>
       </table>
+      <h2>Labels</h2>
+      {error ? <p role="alert">{error}</p> : null}
+      <ul>
+        {labels.map((l) => (
+          <li key={l.id}>
+            <a href={`/labels/${l.id}`}>
+              v{l.version} — {l.status}
+            </a>
+          </li>
+        ))}
+      </ul>
+      <form action={newLabel}>
+        <input type="hidden" name="id" value={bp.id} />
+        <button type="submit">Create label draft</button>
+      </form>
     </main>
   );
 }

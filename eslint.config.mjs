@@ -9,6 +9,7 @@ const privilegedAllowed = [
   "src/modules/jobs/**",
   "src/modules/audit/**",
   "src/modules/catalog/admin.ts",
+  "src/modules/labels/admin.ts",
   "src/db/**",
   "tests/**",
   "scripts/**",
