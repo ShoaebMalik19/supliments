@@ -69,6 +69,15 @@ describe.each(tenantRoutes)("cross-tenant: $file", (route) => {
     for (const h of route.read) expect((await call(h, "GET", route.url(id), id)).status).toBe(200);
   });
 
+  it("control: tenant B can perform each mutation on its own row", async () => {
+    session.actAs(B.owner);
+    for (const m of route.mutate) {
+      const id = await route.seed(B);
+      const res = await call(m.handler, m.method, route.url(id), id, m.body);
+      expect(res.status, `${m.method} ${await res.clone().text()}`).toBeLessThan(300);
+    }
+  });
+
   it("unauthenticated requests get 401", async () => {
     session.actAs(null);
     const id = await route.seed(B);
@@ -95,6 +104,24 @@ describe("registry completeness", () => {
       .map((f) => relative(root, f));
     const registered = new Set([...tenantRoutes, ...unscopedTenantRoutes].map((r) => r.file));
     expect(tenantFiles.filter((f) => !registered.has(f))).toEqual([]);
+  });
+
+  it("every exported method of a registered per-row route is exercised", () => {
+    const root = join(import.meta.dirname, "../..");
+    for (const r of tenantRoutes) {
+      const src = readFileSync(join(root, r.file), "utf8");
+      const exported = [...src.matchAll(/export const (GET|POST|PUT|PATCH|DELETE)\b/g)].map(
+        (m) => m[1],
+      );
+      const covered = new Set([
+        ...(r.read.length ? ["GET"] : []),
+        ...r.mutate.map((m) => m.method),
+      ]);
+      expect(
+        exported.filter((m) => !covered.has(m!)),
+        r.file,
+      ).toEqual([]);
+    }
   });
 });
 
