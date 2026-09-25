@@ -93,6 +93,16 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   `upload_status` pending → ready | rejected (terminal); ready only after magic bytes + exact
   size match. Tenants may UPDATE only upload_status/width/height/checksum. Virus scan: stub.
 
+## Order loop (MVP) — contracts shared across modules
+
+- `modules/pricing/calc.ts`: pure money maths. `FeeRules` = `fee_schedules.rules` (per-order +
+  per-unit fulfillment fee, first/additional-unit shipping, markup bps rounded half-up). In force =
+  highest version whose [effective_from, effective_to) contains the time. No FX: product, SKU and
+  schedule currencies must match. Margin = retail − 1-unit order cost; negatives shown, not blocked.
+- `modules/orders/external.ts`: `ExternalOrder`, the only order shape adapters hand to orders.
+- `modules/integrations/provider.ts`: `CommerceProvider` (Shopify is one implementation).
+- Server-rendered assets via `storeGeneratedAsset` (ready on creation, checksum stored).
+
 ## Working rules
 
 - No comments that restate code. No UI component library yet. Commit per logical step.

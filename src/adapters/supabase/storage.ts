@@ -64,4 +64,24 @@ export const supabaseStorage: StorageProvider = {
     const { error } = await serviceClient().storage.from(bucket).remove([key]);
     if (error) throw error;
   },
+
+  async putObject(bucket, key, data, contentType) {
+    const { error } = await serviceClient()
+      .storage.from(bucket)
+      .upload(key, data, { contentType, upsert: false });
+    if (error) throw error;
+  },
+
+  async getObject(bucket, key) {
+    const { data, error } = await serviceClient().storage.from(bucket).download(key);
+    if (error) {
+      if (
+        (error as { status?: number }).status === 400 ||
+        (error as { status?: number }).status === 404
+      )
+        return null;
+      throw error;
+    }
+    return new Uint8Array(await data.arrayBuffer());
+  },
 };

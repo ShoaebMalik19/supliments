@@ -34,6 +34,14 @@ export class FakeStorage implements StorageProvider {
     return `https://storage.test/download/${bucket}/${key}?ttl=${ttl}`;
   }
 
+  async putObject(bucket: string, key: string, data: Uint8Array) {
+    this.put(bucket, key, data);
+  }
+
+  async getObject(bucket: string, key: string) {
+    return this.objects.get(`${bucket}/${key}`) ?? null;
+  }
+
   async remove(bucket: string, key: string) {
     this.objects.delete(`${bucket}/${key}`);
     this.removed.push(`${bucket}/${key}`);

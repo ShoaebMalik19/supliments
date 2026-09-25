@@ -7,7 +7,7 @@ import {
   syncStatus,
   webhookStatus,
 } from "./enums";
-import { orgId, organizations } from "./tenancy";
+import { orgId, organizations, users } from "./tenancy";
 import { brandProductVariants, brands } from "./branding";
 
 export const integrations = pgTable(
@@ -25,9 +25,28 @@ export const integrations = pgTable(
     credentialsKeyId: text("credentials_key_id"),
     installedAt: ts("installed_at"),
     lastSyncAt: ts("last_sync_at"),
+    ordersSyncedThrough: ts("orders_synced_through"),
     ...timestamps,
   },
   (t) => [unique().on(t.provider, t.externalShopId), index().on(t.orgId)],
+);
+
+export const oauthStates = pgTable(
+  "oauth_states",
+  {
+    id: pk(),
+    orgId: orgId(),
+    provider: integrationProvider("provider").notNull(),
+    shop: text("shop").notNull(),
+    stateHash: text("state_hash").notNull().unique(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    expiresAt: ts("expires_at").notNull(),
+    usedAt: ts("used_at"),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [index().on(t.orgId)],
 );
 
 export const stores = pgTable(

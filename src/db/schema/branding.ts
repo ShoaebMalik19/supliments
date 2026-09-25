@@ -138,6 +138,7 @@ export const labels = pgTable(
     designState: jsonb("design_state").notNull().default({}),
     previewAssetId: uuid("preview_asset_id").references(() => assets.id),
     printFileAssetId: uuid("print_file_asset_id").references(() => assets.id),
+    mockupAssetIds: uuid("mockup_asset_ids").array().notNull().default([]),
     status: labelStatus("status").notNull().default("draft"),
     reviewedBy: uuid("reviewed_by").references(() => users.id),
     reviewedAt: ts("reviewed_at"),

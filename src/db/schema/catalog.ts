@@ -129,6 +129,9 @@ export const skus = pgTable(
     currency: currency().notNull(),
     moq: integer("moq").notNull().default(1),
     leadTimeDays: integer("lead_time_days"),
+    defaultFulfillmentCenterId: uuid("default_fulfillment_center_id").references(
+      (): AnyPgColumn => fulfillmentCenters.id,
+    ),
     isActive: boolean("is_active").notNull().default(true),
     ...timestamps,
   },
@@ -182,6 +185,8 @@ export const labelTemplates = pgTable("label_templates", {
   printSpec: jsonb("print_spec").notNull(),
   editableFields: jsonb("editable_fields").notNull().default([]),
   fixedPanels: jsonb("fixed_panels").notNull().default([]),
+  mockupSpec: jsonb("mockup_spec").notNull().default([]),
+  isPlaceholder: boolean("is_placeholder").notNull().default(false),
   dieLineAssetId: uuid("die_line_asset_id"),
   ...timestamps,
 });

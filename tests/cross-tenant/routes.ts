@@ -1,8 +1,15 @@
 import { eq } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
 import { expect } from "vitest";
-import { assets, brands, catalogProducts, memberships } from "@/db/schema";
-import { createAsset, createUser, type createTenant } from "../helpers";
+import { assets, brandProducts, brands, catalogProducts, memberships } from "@/db/schema";
+import {
+  createAsset,
+  createUser,
+  ensureFeeSchedule,
+  seedBrandProduct,
+  seedCatalogProduct as seedCatalog,
+  type createTenant,
+} from "../helpers";
 import { bytesOf, PNG_HEADER } from "../fake-storage";
 import * as brandRoute from "@/app/api/brands/[id]/route";
 import * as memberRoute from "@/app/api/members/[id]/route";
@@ -11,6 +18,10 @@ import * as catalogProductRoute from "@/app/api/catalog/products/[id]/route";
 import * as assetUploadsRoute from "@/app/api/assets/uploads/route";
 import * as assetCompleteRoute from "@/app/api/assets/[id]/complete/route";
 import * as assetUrlRoute from "@/app/api/assets/[id]/url/route";
+import * as brandsRoute from "@/app/api/brands/route";
+import * as brandProductsRoute from "@/app/api/brand-products/route";
+import * as brandProductRoute from "@/app/api/brand-products/[id]/route";
+import * as marginRoute from "@/app/api/margin/route";
 
 type Tenant = Awaited<ReturnType<typeof createTenant>>;
 export type Handler = (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
@@ -92,6 +103,15 @@ export const tenantRoutes: TenantRouteCase[] = [
     snapshot: assetSnapshot,
     read: [],
     mutate: [{ method: "POST", handler: assetCompleteRoute.POST }],
+  },
+  {
+    file: "src/app/api/brand-products/[id]/route.ts",
+    url: (id) => `http://test/api/brand-products/${id}`,
+    seed: async (b) => (await seedBrandProduct(b)).brandProduct.id,
+    snapshot: async (id) =>
+      (await privilegedDb().select().from(brandProducts).where(eq(brandProducts.id, id)))[0],
+    read: [brandProductRoute.GET],
+    mutate: [{ method: "PATCH", handler: brandProductRoute.PATCH, body: { title: "pwned" } }],
   },
 ];
 
@@ -176,6 +196,62 @@ export const unscopedTenantRoutes: UnscopedRouteCase[] = [
       const row = await assetSnapshot(asset.id);
       expect(row).toMatchObject({ orgId: A.org.id, uploadedBy: A.owner.id });
       expect(row!.storageKey.startsWith(`org/${A.org.id}/${asset.id}/`)).toBe(true);
+    },
+  },
+  {
+    file: "src/app/api/brands/route.ts",
+    reason: "collection + create; lists and writes only the caller's org",
+    check: async ({ A, B }) => {
+      const url = "http://test/api/brands";
+      const list = await callRoute(brandsRoute.GET as unknown as Handler, "GET", url, "");
+      const ids = ((await list.json()) as { brands: { id: string; orgId: string }[] }).brands;
+      expect(ids.every((b) => b.orgId === A.org.id)).toBe(true);
+      expect(ids.map((b) => b.id)).not.toContain(B.brand.id);
+      const post = brandsRoute.POST as unknown as Handler;
+      expect((await callRoute(post, "POST", url, "", { name: "X", orgId: B.org.id })).status).toBe(
+        400,
+      );
+      const res = await callRoute(post, "POST", url, "", { name: "Second brand" });
+      expect(res.status).toBe(201);
+      expect(((await res.json()) as { orgId: string }).orgId).toBe(A.org.id);
+    },
+  },
+  {
+    file: "src/app/api/brand-products/route.ts",
+    reason: "collection + create; the referenced brand must belong to the caller",
+    check: async ({ A, B }) => {
+      const url = "http://test/api/brand-products";
+      const { product, skus } = await seedCatalog();
+      const body = (brandId: string) => ({
+        brandId,
+        catalogProductId: product.id,
+        currency: "USD",
+        variants: [{ skuId: skus[0]!.id, retailPriceMinor: 2999 }],
+      });
+      const post = brandProductsRoute.POST as unknown as Handler;
+      expect((await callRoute(post, "POST", url, "", body(B.brand.id))).status).toBe(404);
+      expect((await callRoute(post, "POST", url, "", body(A.brand.id))).status).toBe(201);
+      await seedBrandProduct(B);
+      const list = await callRoute(brandProductsRoute.GET as unknown as Handler, "GET", url, "");
+      const rows = ((await list.json()) as { brandProducts: { orgId: string }[] }).brandProducts;
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.every((r) => r.orgId === A.org.id)).toBe(true);
+    },
+  },
+  {
+    file: "src/app/api/margin/route.ts",
+    reason: "platform catalog cost + platform fee schedule; no tenant rows",
+    check: async () => {
+      await ensureFeeSchedule();
+      const { skus } = await seedCatalog();
+      const get = marginRoute.GET as unknown as Handler;
+      const res = await callRoute(
+        get,
+        "GET",
+        `http://test/api/margin?skuId=${skus[0]!.id}&retailPriceMinor=2999`,
+        "",
+      );
+      expect(res.status).toBe(200);
     },
   },
 ];

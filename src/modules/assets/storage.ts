@@ -9,6 +9,8 @@ export interface StorageProvider {
   readHead(bucket: string, key: string, nBytes: number): Promise<ObjectHead | null>;
   createSignedDownloadUrl(bucket: string, key: string, ttlSeconds: number): Promise<string>;
   remove(bucket: string, key: string): Promise<void>;
+  putObject(bucket: string, key: string, data: Uint8Array, contentType: string): Promise<void>;
+  getObject(bucket: string, key: string): Promise<Uint8Array | null>;
 }
 
 let override: StorageProvider | null = null;

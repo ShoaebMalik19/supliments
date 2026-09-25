@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { TenantDb } from "@/db/tenant";
@@ -164,4 +164,47 @@ export async function downloadUrl(t: TenantDb, id: string) {
     DOWNLOAD_TTL_SECONDS,
   );
   return { url, expiresIn: DOWNLOAD_TTL_SECONDS };
+}
+
+/** Server-generated asset (render output): bytes are ours, so it is `ready` on creation. */
+export async function storeGeneratedAsset(
+  t: TenantDb,
+  input: { kind: AssetKind; mime: AllowedMime; data: Uint8Array; width?: number; height?: number },
+) {
+  const [{ id }] = (await t.tx.execute(sql`select uuid_generate_v7()::text as id`)) as unknown as [
+    { id: string },
+  ];
+  const bucket = assetsBucket();
+  const storageKey = storageKeyFor(t.orgId, id);
+  await storage().putObject(bucket, storageKey, input.data, input.mime);
+  return t.insert(assets, {
+    id,
+    kind: input.kind,
+    mime: input.mime,
+    bytes: input.data.length,
+    width: input.width,
+    height: input.height,
+    bucket,
+    storageKey,
+    checksum: createHash("sha256").update(input.data).digest("hex"),
+    uploadStatus: "ready",
+  });
+}
+
+/** Bytes of a ready asset visible to the tenant (own org or platform), or null. */
+export async function readAssetBytes(t: TenantDb, id: string) {
+  if (!isUuid(id)) return null;
+  const [asset] = await t.tx
+    .select()
+    .from(assets)
+    .where(
+      and(
+        eq(assets.id, id),
+        eq(assets.uploadStatus, "ready"),
+        or(eq(assets.orgId, t.orgId), isNull(assets.orgId)),
+      ),
+    );
+  if (!asset) return null;
+  const data = await storage().getObject(asset.bucket, asset.storageKey);
+  return data ? { asset, data } : null;
 }
