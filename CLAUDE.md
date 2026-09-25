@@ -41,30 +41,30 @@ integrations · orders · fulfillment · billing · notifications · admin.
 - Tenant data is accessed only via `withTenant(orgId, fn)` (`src/db/tenant.ts`):
   it opens a transaction, `SET LOCAL ROLE app_user`, sets `app.current_org`, and
   hands out a `TenantDb` that injects `org_id` on insert and filters by it on read.
-- RLS is ENABLED on every public table. Tables with `org_id` get
-  `SELECT enable_tenant_rls('table', '<grants>')` in a custom migration: policy
-  `org_id = current_org_id()` (= `nullif(current_setting('app.current_org', true), '')::uuid`;
-  missing-ok so an unset GUC yields zero rows) for `app_user`, plus grants.
-  `tests/schema.test.ts` fails CI if a table lacks RLS or an org_id table lacks the policy.
+- RLS is ENABLED on every public table. `org_id` tables get
+  `SELECT enable_tenant_rls('t', '<grants>')` in a custom migration: policy
+  `org_id = current_org_id()` (unset GUC → zero rows). `tests/schema.test.ts` fails CI
+  if a table lacks RLS or an org_id table lacks the policy.
 - Not FORCED: the table-owner connection role is the privileged path (Supabase's
   `postgres` cannot create BYPASSRLS roles). `app_user` is NOLOGIN, non-owner, no bypass.
 - Supabase `anon`/`authenticated` get no grants on `public` (no PostgREST exposure).
 - Child tables carry their own denormalized `org_id` so RLS never needs joins.
-- `src/db/privileged.ts` (bypasses RLS) may only be imported by `modules/auth`,
-  `modules/tenancy`, `modules/admin`, `modules/jobs`, `modules/audit`, and tests
-  (ESLint `no-restricted-imports`).
-  Every privileged cross-tenant action writes an AuditLog row.
-- Cross-tenant access returns **404, never 403**. Every route touching tenant data
-  must be registered in `tests/cross-tenant/routes.ts`; a meta-test fails if an
-  API route file uses `withTenant` and is not registered. Extend this suite forever.
+- `src/db/privileged.ts` (bypasses RLS) may only be imported by modules auth, tenancy, admin,
+  jobs, audit, `catalog/admin.ts` (catalog writes) and tests (ESLint). Every privileged
+  cross-tenant action writes an AuditLog row.
+- Cross-tenant access returns **404, never 403**. Every tenant API route is registered in
+  `tests/cross-tenant/routes.ts` (meta-test enforces; routes without a per-row target go in
+  `unscopedTenantRoutes` with their own check). Every `src/app/api/admin` route uses
+  `adminRoute` and is in `tests/admin-routes.ts`; non-admins (even org owners) get 404.
 
 ## Money rule (non-negotiable)
 
 - Integer minor units (`bigint`, column suffix `_minor`) + ISO-4217 `currency`
   (`char(3)`, uppercase check) on every amount. Never floats, never `numeric` money.
-- `tests/schema.test.ts` fails if any `*_minor` column lacks a currency column in
-  its table, or if any `real`/`double precision` column exists.
-- In TS use `Money = { amountMinor: bigint; currency: string }` (`src/lib/money.ts`).
+- `tests/schema.test.ts` fails on a `*_minor` column without currency or any float column.
+- TS: `Money = { amountMinor: bigint; currency: string }` (`src/lib/money.ts`). Wire: output
+  digit strings (`json()`); input a safe integer or digit string (`minorUnitsInput`), never
+  decimals. An amount is only written together with its currency.
 
 ## Adapter rule
 
@@ -74,8 +74,7 @@ integrations · orders · fulfillment · billing · notifications · admin.
   `PaymentProvider`). Modules never import vendor SDKs directly.
 - The spreadsheet fulfillment adapter lives in `src/adapters/manual`; nothing outside
   it may know about columns, filenames or email (§0.1).
-- `PaymentProvider` has only a `manual` implementation in v1; charges are
-  `pending_external` rows + ledger entries.
+- `PaymentProvider`: only `manual` in v1; charges are `pending_external` rows + ledger.
 
 ## Data conventions
 

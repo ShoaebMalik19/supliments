@@ -25,3 +25,8 @@ export function json(body: unknown, init?: ResponseInit): Response {
     headers: { "content-type": "application/json", ...init?.headers },
   });
 }
+
+/** Parsed JSON body, or undefined when absent/malformed (schema validation then rejects it). */
+export async function readJson(req: Request): Promise<unknown> {
+  return req.json().catch(() => undefined);
+}
