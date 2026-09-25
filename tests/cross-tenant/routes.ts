@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
 import { expect } from "vitest";
-import { assets, brandProducts, brands, catalogProducts, memberships } from "@/db/schema";
+import { assets, brandProducts, brands, catalogProducts, memberships, orders } from "@/db/schema";
 import {
   createAsset,
   createUser,
@@ -22,6 +22,9 @@ import * as brandsRoute from "@/app/api/brands/route";
 import * as brandProductsRoute from "@/app/api/brand-products/route";
 import * as brandProductRoute from "@/app/api/brand-products/[id]/route";
 import * as marginRoute from "@/app/api/margin/route";
+import * as ordersRoute from "@/app/api/orders/route";
+import * as orderRoute from "@/app/api/orders/[id]/route";
+import { seedPricedOrder } from "../order-fixtures";
 
 type Tenant = Awaited<ReturnType<typeof createTenant>>;
 export type Handler = (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
@@ -112,6 +115,15 @@ export const tenantRoutes: TenantRouteCase[] = [
       (await privilegedDb().select().from(brandProducts).where(eq(brandProducts.id, id)))[0],
     read: [brandProductRoute.GET],
     mutate: [{ method: "PATCH", handler: brandProductRoute.PATCH, body: { title: "pwned" } }],
+  },
+  {
+    file: "src/app/api/orders/[id]/route.ts",
+    url: (id) => `http://test/api/orders/${id}`,
+    seed: seedPricedOrder,
+    snapshot: async (id) =>
+      (await privilegedDb().select().from(orders).where(eq(orders.id, id)))[0],
+    read: [orderRoute.GET],
+    mutate: [],
   },
 ];
 
@@ -252,6 +264,24 @@ export const unscopedTenantRoutes: UnscopedRouteCase[] = [
         "",
       );
       expect(res.status).toBe(200);
+    },
+  },
+  {
+    file: "src/app/api/orders/route.ts",
+    reason: "collection; lists only the caller's org orders",
+    check: async ({ A, B }) => {
+      const mine = await seedPricedOrder(A);
+      const theirs = await seedPricedOrder(B);
+      const res = await callRoute(
+        ordersRoute.GET as unknown as Handler,
+        "GET",
+        "http://test/x",
+        "",
+      );
+      expect(res.status).toBe(200);
+      const ids = ((await res.json()) as { orders: { id: string }[] }).orders.map((o) => o.id);
+      expect(ids).toContain(mine);
+      expect(ids).not.toContain(theirs);
     },
   },
 ];
