@@ -22,6 +22,7 @@ import * as brandsRoute from "@/app/api/brands/route";
 import * as brandProductsRoute from "@/app/api/brand-products/route";
 import * as brandProductRoute from "@/app/api/brand-products/[id]/route";
 import * as marginRoute from "@/app/api/margin/route";
+import { shopifyTenantRoutes, shopifyUnscopedRoutes } from "./shopify-routes";
 
 type Tenant = Awaited<ReturnType<typeof createTenant>>;
 export type Handler = (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
@@ -113,6 +114,7 @@ export const tenantRoutes: TenantRouteCase[] = [
     read: [brandProductRoute.GET],
     mutate: [{ method: "PATCH", handler: brandProductRoute.PATCH, body: { title: "pwned" } }],
   },
+  ...shopifyTenantRoutes,
 ];
 
 async function assetSnapshot(id: string) {
@@ -254,4 +256,5 @@ export const unscopedTenantRoutes: UnscopedRouteCase[] = [
       expect(res.status).toBe(200);
     },
   },
+  ...shopifyUnscopedRoutes,
 ];

@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
-import { integrations, stores } from "@/db/schema";
+import { integrations, jobQueue, stores } from "@/db/schema";
 import { encryptSecret } from "@/modules/integrations/secrets";
 import * as installRoute from "@/app/api/integrations/shopify/install/route";
 import * as callbackRoute from "@/app/api/integrations/shopify/callback/route";
@@ -93,3 +93,8 @@ export async function seedShopifyIntegration(fake: FakeShopify, tenant: Tenant, 
 let shopSeq = 0;
 export const uniqueShop = (prefix = "store") =>
   `${prefix}-${Date.now().toString(36)}-${++shopSeq}.myshopify.com`;
+
+/** Removes integration jobs a test file left pending so other files' drains are unaffected. */
+export async function clearIntegrationJobs() {
+  await privilegedDb().delete(jobQueue).where(like(jobQueue.kind, "integrations.%"));
+}

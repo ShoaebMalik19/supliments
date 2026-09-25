@@ -11,7 +11,9 @@ import { setStorageProviderForTests } from "@/modules/assets";
 import { fakeStorage } from "../fake-storage";
 import { FakeSession } from "../fake-session";
 import { createTenant } from "../helpers";
+import { clearIntegrationJobs } from "../shopify-helpers";
 import { callRoute, tenantRoutes, unscopedTenantRoutes, type Handler } from "./routes";
+import { exemptTenantRoutes } from "./shopify-routes";
 
 const session = new FakeSession();
 let A: Awaited<ReturnType<typeof createTenant>>;
@@ -23,9 +25,10 @@ beforeAll(async () => {
   A = await createTenant("Tenant A");
   B = await createTenant("Tenant B");
 });
-afterAll(() => {
+afterAll(async () => {
   setSessionSourceForTests(null);
   setStorageProviderForTests(null);
+  await clearIntegrationJobs();
 });
 beforeEach(() => session.actAs(A.owner));
 
@@ -90,6 +93,15 @@ describe.each(unscopedTenantRoutes)("cross-tenant (unscoped): $file", (route) =>
     await route.check({ A, B, actAs: (u) => session.actAs(u) });
   });
 });
+
+describe.each(exemptTenantRoutes)(
+  "session-less route (exempt from tenantRoute): $file",
+  (route) => {
+    it(route.reason, async () => {
+      await route.check({ A, B, actAs: (u) => session.actAs(u) });
+    });
+  },
+);
 
 describe("registry completeness", () => {
   it("every API route touching tenant data is registered in routes.ts", () => {

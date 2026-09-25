@@ -34,6 +34,7 @@ import { bytesOf, fakeStorage, PNG_HEADER } from "./fake-storage";
 import { createAsset, createTenant, createUser, seedBrandProduct } from "./helpers";
 import {
   beginInstall,
+  clearIntegrationJobs,
   connectShopify,
   finishInstall,
   seedShopifyIntegration,
@@ -59,10 +60,11 @@ beforeAll(() => {
   setStorageProviderForTests(fakeStorage);
   registerIntegrationJobs();
 });
-afterAll(() => {
+afterAll(async () => {
   setSessionSourceForTests(null);
   setStorageProviderForTests(null);
   setShopifyFetchForTests(null);
+  await clearIntegrationJobs();
 });
 beforeEach(() => {
   fake = new FakeShopify();
