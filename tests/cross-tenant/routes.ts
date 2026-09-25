@@ -37,6 +37,7 @@ import { seedLabel, seedLabelledBrandProduct } from "../label-helpers";
 import * as ordersRoute from "@/app/api/orders/route";
 import * as orderRoute from "@/app/api/orders/[id]/route";
 import { seedPricedOrder } from "../order-fixtures";
+import { shopifyTenantRoutes, shopifyUnscopedRoutes } from "./shopify-routes";
 
 type Tenant = Awaited<ReturnType<typeof createTenant>>;
 export type Handler = (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
@@ -173,6 +174,7 @@ export const tenantRoutes: TenantRouteCase[] = [
     read: [orderRoute.GET],
     mutate: [],
   },
+  ...shopifyTenantRoutes,
 ];
 
 async function labelSnapshot(id: string) {
@@ -336,4 +338,5 @@ export const unscopedTenantRoutes: UnscopedRouteCase[] = [
       expect(ids).not.toContain(theirs);
     },
   },
+  ...shopifyUnscopedRoutes,
 ];

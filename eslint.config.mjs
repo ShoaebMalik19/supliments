@@ -10,6 +10,7 @@ const privilegedAllowed = [
   "src/modules/audit/**",
   "src/modules/catalog/admin.ts",
   "src/modules/labels/admin.ts",
+  "src/modules/integrations/privileged.ts",
   "src/db/**",
   "tests/**",
   "scripts/**",

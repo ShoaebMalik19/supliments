@@ -113,6 +113,17 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   supersedes the previous approved version. Publishing/orders use `getApprovedLabel()`.
 - Tenants may INSERT open review items; closing is privileged (`admin.closeReviewItem`).
 
+### Shopify (M3)
+
+- Only `src/adapters/shopify` knows Shopify URLs/fields; money is decimal strings parsed as strings.
+  `integrations/privileged.ts` is the only RLS-bypassing integrations code (routing by shop,
+  hijack detection, reconcile scheduling). Tokens: AES-256-GCM (`INTEGRATION_ENCRYPTION_KEY`, id
+  `v1`), decrypted only in `integrations/connection.ts`; never in responses, audit, jobs or logs.
+- Webhooks: HMAC over raw body → persist + enqueue → 200. The HMAC does not cover the shop header,
+  so order webhooks are notifications only: the job re-fetches the order from the integration's
+  own shop (`fetchOrder`) and ignores it if absent. Reconciler polls every 15 min with overlap.
+- Store pushes go through `pushShipmentToStore`/jobs; 401 → `needs_reauth`, pushes halt.
+
 ### Orders, pricing, ledger (M4)
 
 - Order status changes only via `orders/state.ts` `transitionOrder` (row lock, order_event,

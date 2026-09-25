@@ -264,3 +264,4 @@ export async function setBrandProductLabelState(
   return t.update(brandProducts, id, values);
 }
 export * from "./order-lines";
+export { markBrandProductPublished, publishableProduct } from "./publish";

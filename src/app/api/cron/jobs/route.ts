@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { registerIntegrationJobs, scheduleReconciliation } from "@/modules/integrations";
 import { drainJobs } from "@/modules/jobs";
 
 export const dynamic = "force-dynamic";
@@ -14,5 +15,7 @@ function authorized(req: Request) {
 
 export async function GET(req: Request) {
   if (!authorized(req)) return new Response("Not found", { status: 404 });
-  return Response.json(await drainJobs());
+  registerIntegrationJobs();
+  const reconcileScheduled = await scheduleReconciliation();
+  return Response.json({ ...(await drainJobs()), reconcileScheduled });
 }

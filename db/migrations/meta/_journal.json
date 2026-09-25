@@ -57,6 +57,13 @@
       "when": 1790368509675,
       "tag": "0007_labels_review_insert",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790369515090,
+      "tag": "0008_shopify_review_type",
+      "breakpoints": true
     }
   ]
 }
