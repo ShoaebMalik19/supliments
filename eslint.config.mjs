@@ -15,7 +15,7 @@ const privilegedAllowed = [
 ];
 
 const config = [
-  { ignores: [".next/**", "node_modules/**", "next-env.d.ts", "db/migrations/**"] },
+  { ignores: [".claude/**", ".next/**", "node_modules/**", "next-env.d.ts", "db/migrations/**"] },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
     rules: {
