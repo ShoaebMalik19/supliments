@@ -50,6 +50,13 @@
       "when": 1790367797650,
       "tag": "0006_order_loop_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790368775674,
+      "tag": "0007_shopify_review_type",
+      "breakpoints": true
     }
   ]
 }
