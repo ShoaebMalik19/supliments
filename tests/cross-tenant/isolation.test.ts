@@ -7,9 +7,11 @@ import { withTenant } from "@/db/tenant";
 import { brands } from "@/db/schema";
 import { setSessionSourceForTests } from "@/modules/auth";
 import { tenantRoute } from "@/modules/tenancy";
+import { setStorageProviderForTests } from "@/modules/assets";
+import { fakeStorage } from "../fake-storage";
 import { FakeSession } from "../fake-session";
 import { createTenant } from "../helpers";
-import { tenantRoutes, type Handler } from "./routes";
+import { callRoute, tenantRoutes, unscopedTenantRoutes, type Handler } from "./routes";
 
 const session = new FakeSession();
 let A: Awaited<ReturnType<typeof createTenant>>;
@@ -17,20 +19,17 @@ let B: Awaited<ReturnType<typeof createTenant>>;
 
 beforeAll(async () => {
   setSessionSourceForTests(session);
+  setStorageProviderForTests(fakeStorage);
   A = await createTenant("Tenant A");
   B = await createTenant("Tenant B");
 });
-afterAll(() => setSessionSourceForTests(null));
+afterAll(() => {
+  setSessionSourceForTests(null);
+  setStorageProviderForTests(null);
+});
 beforeEach(() => session.actAs(A.owner));
 
-async function call(handler: Handler, method: string, url: string, id: string, body?: unknown) {
-  const req = new Request(url, {
-    method,
-    headers: { "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  return handler(req, { params: Promise.resolve({ id }) });
-}
+const call = callRoute;
 
 async function expectIsolated(
   handler: Handler,
@@ -70,10 +69,25 @@ describe.each(tenantRoutes)("cross-tenant: $file", (route) => {
     for (const h of route.read) expect((await call(h, "GET", route.url(id), id)).status).toBe(200);
   });
 
+  it("control: tenant B can perform each mutation on its own row", async () => {
+    session.actAs(B.owner);
+    for (const m of route.mutate) {
+      const id = await route.seed(B);
+      const res = await call(m.handler, m.method, route.url(id), id, m.body);
+      expect(res.status, `${m.method} ${await res.clone().text()}`).toBeLessThan(300);
+    }
+  });
+
   it("unauthenticated requests get 401", async () => {
     session.actAs(null);
     const id = await route.seed(B);
     for (const h of route.read) expect((await call(h, "GET", route.url(id), id)).status).toBe(401);
+  });
+});
+
+describe.each(unscopedTenantRoutes)("cross-tenant (unscoped): $file", (route) => {
+  it(route.reason, async () => {
+    await route.check({ A, B, actAs: (u) => session.actAs(u) });
   });
 });
 
@@ -88,8 +102,26 @@ describe("registry completeness", () => {
     const tenantFiles = walk(join(root, "src/app/api"))
       .filter((f) => /tenantRoute|withTenant/.test(readFileSync(f, "utf8")))
       .map((f) => relative(root, f));
-    const registered = new Set(tenantRoutes.map((r) => r.file));
+    const registered = new Set([...tenantRoutes, ...unscopedTenantRoutes].map((r) => r.file));
     expect(tenantFiles.filter((f) => !registered.has(f))).toEqual([]);
+  });
+
+  it("every exported method of a registered per-row route is exercised", () => {
+    const root = join(import.meta.dirname, "../..");
+    for (const r of tenantRoutes) {
+      const src = readFileSync(join(root, r.file), "utf8");
+      const exported = [...src.matchAll(/export const (GET|POST|PUT|PATCH|DELETE)\b/g)].map(
+        (m) => m[1],
+      );
+      const covered = new Set([
+        ...(r.read.length ? ["GET"] : []),
+        ...r.mutate.map((m) => m.method),
+      ]);
+      expect(
+        exported.filter((m) => !covered.has(m!)),
+        r.file,
+      ).toEqual([]);
+    }
   });
 });
 

@@ -1,18 +1,8 @@
-import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { listOrganizations, requireAdmin, setOrganizationStatus } from "@/modules/admin";
-import { HttpError } from "@/lib/http";
+import { listOrganizations, setOrganizationStatus } from "@/modules/admin";
+import { adminOrNotFound } from "./guard";
 
 export const dynamic = "force-dynamic";
-
-async function adminOrNotFound() {
-  try {
-    return await requireAdmin();
-  } catch (e) {
-    if (e instanceof HttpError) notFound();
-    throw e;
-  }
-}
 
 async function toggleStatus(form: FormData) {
   "use server";
@@ -28,6 +18,9 @@ export default async function AdminPage() {
   return (
     <main>
       <h1>Admin — organizations</h1>
+      <p>
+        <a href="/admin/catalog">Catalog</a>
+      </p>
       <table>
         <tbody>
           {orgs.map((o) => (

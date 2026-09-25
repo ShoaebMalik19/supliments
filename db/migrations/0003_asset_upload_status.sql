@@ -1,0 +1,3 @@
+CREATE TYPE "public"."asset_upload_status" AS ENUM('pending', 'ready', 'rejected');--> statement-breakpoint
+ALTER TABLE "assets" ADD COLUMN "upload_status" "asset_upload_status" DEFAULT 'pending' NOT NULL;--> statement-breakpoint
+ALTER TABLE "assets" ADD CONSTRAINT "assets_storage_key_scoped" CHECK (("assets"."org_id" IS NULL AND "assets"."storage_key" LIKE 'platform/%') OR "assets"."storage_key" LIKE 'org/' || "assets"."org_id"::text || '/%');
