@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { TenantDb } from "@/db/tenant";
+import type { Tx } from "@/db/client";
 import { assets } from "@/db/schema";
 import { assetKind } from "@/db/schema/enums";
 import { recordAudit } from "@/modules/audit";
@@ -207,4 +208,39 @@ export async function readAssetBytes(t: TenantDb, id: string) {
   if (!asset) return null;
   const data = await storage().getObject(asset.bucket, asset.storageKey);
   return data ? { asset, data } : null;
+}
+
+/** Platform-owned file (org_id null), written inside the caller's privileged transaction. */
+export async function storePlatformAsset(
+  tx: Tx,
+  input: { kind: AssetKind; mime: string; data: Uint8Array; path: string },
+) {
+  const bucket = assetsBucket();
+  const storageKey = `platform/${input.path}`;
+  await storage().putObject(bucket, storageKey, input.data, input.mime);
+  const [row] = await tx
+    .insert(assets)
+    .values({
+      kind: input.kind,
+      mime: input.mime,
+      bytes: input.data.length,
+      bucket,
+      storageKey,
+      checksum: createHash("sha256").update(input.data).digest("hex"),
+      uploadStatus: "ready",
+    })
+    .returning();
+  return row!;
+}
+
+/** Signed link for an asset row the caller is already authorized for (e.g. partner artwork). */
+export async function signedUrlForAsset(
+  asset: { bucket: string; storageKey: string },
+  ttlSeconds: number,
+) {
+  return storage().createSignedDownloadUrl(asset.bucket, asset.storageKey, ttlSeconds);
+}
+
+export async function readAssetObject(asset: { bucket: string; storageKey: string }) {
+  return storage().getObject(asset.bucket, asset.storageKey);
 }

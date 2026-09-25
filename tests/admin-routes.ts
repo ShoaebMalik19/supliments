@@ -21,6 +21,10 @@ import * as resolveRoute from "@/app/api/admin/orders/[id]/resolve/route";
 import { desc } from "drizzle-orm";
 import { TEST_FEE_RULES } from "./helpers";
 import { seedPricedOrder, seedResolvableOrder } from "./order-fixtures";
+import * as dispatchBatchesRoute from "@/app/api/admin/dispatch-batches/route";
+import * as dispatchFileRoute from "@/app/api/admin/dispatch-batches/[id]/file/route";
+import * as dispatchImportRoute from "@/app/api/admin/dispatch-batches/[id]/import/route";
+import { exportedBatch, submittedOrder } from "./fulfillment-fixtures";
 
 type Tenant = Awaited<ReturnType<typeof createTenant>>;
 export const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
@@ -180,6 +184,23 @@ export const adminRoutes: AdminRouteCase[] = [
         rules: TEST_FEE_RULES,
       };
     },
+  },
+  {
+    file: "src/app/api/admin/dispatch-batches/route.ts",
+    module: dispatchBatchesRoute,
+    id: async () => (await submittedOrder()).fc.id,
+    body: (fulfillmentCenterId) => ({ fulfillmentCenterId }),
+  },
+  {
+    file: "src/app/api/admin/dispatch-batches/[id]/file/route.ts",
+    module: dispatchFileRoute,
+    id: async () => (await exportedBatch()).batch.id,
+  },
+  {
+    file: "src/app/api/admin/dispatch-batches/[id]/import/route.ts",
+    module: dispatchImportRoute,
+    id: async () => (await exportedBatch()).batch.id,
+    body: () => "order_reference,status\r\n",
   },
 ];
 

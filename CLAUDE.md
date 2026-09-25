@@ -135,6 +135,19 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
 - A paid order stays `awaiting_payment` until fulfillment moves it to `submitted`
   (job `fulfillment.order_paid`). Admin order actions resolve org privileged, then `withTenant`.
 
+### Fulfillment (M5)
+
+- `FulfillmentProvider` (`fulfillment/provider.ts`); adapters registered in `fulfillment/providers.ts`
+  by `fulfillment_centers.adapter_key`. The spreadsheet adapter (`adapters/manual`) is the only code
+  that knows CSV columns/filenames; partner statuses map via a table with an explicit `unknown`.
+- Paid order (job `fulfillment.order_paid`) → routed (SKU default center, else the only active
+  one) → one fulfillment order per center with key `fo:{orderId}:{centerId}` BEFORE export →
+  order `submitted`. Missing partner SKU code blocks export and opens a review item.
+- Import is idempotent on our reference within the batch; shipment unique (carrier, tracking).
+  Statuses only move forward. A new shipment enqueues `fulfillment.push_to_store` (key
+  `shipment:{id}`); pushes never repeat. `fulfillment/platform.ts` is the privileged part.
+- Stuck monitor (hourly job): thresholds in `STUCK_THRESHOLDS`; one open review item per entity.
+
 ## Working rules
 
 - No comments that restate code. No UI component library yet. Commit per logical step.
