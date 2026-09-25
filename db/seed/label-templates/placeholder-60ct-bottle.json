@@ -1,0 +1,149 @@
+{
+  "name": "PLACEHOLDER — Standard 60-capsule bottle wrap (152×76 mm)",
+  "isPlaceholder": true,
+  "printSpec": {
+    "trimWidthMm": 152,
+    "trimHeightMm": 76,
+    "bleedMm": 3,
+    "safeAreaMm": 5,
+    "dpi": 300,
+    "previewDpi": 96,
+    "colorProfile": "FOGRA39 (ISO Coated v2) — PLACEHOLDER, confirm with manufacturer"
+  },
+  "editableFields": [
+    {
+      "type": "color",
+      "key": "backgroundColor",
+      "label": "Primary colour",
+      "required": true,
+      "target": "background",
+      "default": "#FFFFFF"
+    },
+    {
+      "type": "color",
+      "key": "textColor",
+      "label": "Text colour",
+      "required": true,
+      "target": "text",
+      "default": "#1A1A1A"
+    },
+    {
+      "type": "image",
+      "key": "logo",
+      "label": "Logo",
+      "required": false,
+      "assetKind": "logo",
+      "box": { "x": 62, "y": 7, "width": 28, "height": 18 }
+    },
+    {
+      "type": "text",
+      "key": "brandName",
+      "label": "Brand name",
+      "required": true,
+      "maxLength": 24,
+      "box": { "x": 52, "y": 27, "width": 48, "height": 12 },
+      "fontSizeMm": 8,
+      "fontWeight": "bold",
+      "align": "center",
+      "colorField": "textColor"
+    },
+    {
+      "type": "text",
+      "key": "variantName",
+      "label": "Flavour / variant",
+      "required": true,
+      "maxLength": 32,
+      "box": { "x": 52, "y": 41, "width": 48, "height": 8 },
+      "fontSizeMm": 4.5,
+      "fontWeight": "normal",
+      "align": "center",
+      "colorField": "textColor"
+    },
+    {
+      "type": "text",
+      "key": "tagline",
+      "label": "Tagline (optional)",
+      "required": false,
+      "maxLength": 60,
+      "box": { "x": 52, "y": 51, "width": 48, "height": 7 },
+      "fontSizeMm": 3,
+      "fontWeight": "normal",
+      "align": "center",
+      "colorField": "textColor"
+    }
+  ],
+  "fixedPanels": [
+    {
+      "key": "supplementFacts",
+      "label": "Supplement facts",
+      "locked": true,
+      "box": { "x": 5, "y": 5, "width": 42, "height": 66 },
+      "background": "#FFFFFF",
+      "textColor": "#000000",
+      "fontSizeMm": 2.4,
+      "lines": [
+        "Supplement Facts",
+        "Serving Size: 2 Capsules",
+        "Servings Per Container: 30",
+        "PLACEHOLDER PANEL",
+        "Final facts panel is supplied",
+        "per SKU by the manufacturer."
+      ],
+      "reserved": false
+    },
+    {
+      "key": "netQuantity",
+      "label": "Net quantity",
+      "locked": true,
+      "box": { "x": 60, "y": 62, "width": 32, "height": 7 },
+      "background": "#FFFFFF",
+      "textColor": "#000000",
+      "fontSizeMm": 3.5,
+      "lines": ["60 capsules"],
+      "reserved": false
+    },
+    {
+      "key": "manufacturer",
+      "label": "Manufacturer / distributor",
+      "locked": true,
+      "box": { "x": 105, "y": 5, "width": 42, "height": 30 },
+      "background": "#FFFFFF",
+      "textColor": "#000000",
+      "fontSizeMm": 2.2,
+      "lines": [
+        "Distributed by: BRAND OWNER",
+        "Manufactured for the distributor",
+        "in a GMP-certified facility.",
+        "PLACEHOLDER — final text per SKU"
+      ],
+      "reserved": false
+    },
+    {
+      "key": "barcode",
+      "label": "Barcode area",
+      "locked": true,
+      "box": { "x": 110, "y": 44, "width": 32, "height": 22 },
+      "background": "#FFFFFF",
+      "textColor": "#000000",
+      "fontSizeMm": 2.2,
+      "lines": ["BARCODE AREA"],
+      "reserved": true
+    }
+  ],
+  "mockupSpec": [
+    {
+      "key": "front",
+      "name": "Front",
+      "canvas": { "widthPx": 1200, "heightPx": 1200 },
+      "background": { "assetId": null, "color": "#EDEDED" },
+      "placement": { "x": 300, "y": 450, "widthPx": 600, "heightPx": 300, "rotateDeg": 0 }
+    },
+    {
+      "key": "angled",
+      "name": "Angled",
+      "canvas": { "widthPx": 1200, "heightPx": 1200 },
+      "background": { "assetId": null, "color": "#E4E8EC" },
+      "placement": { "x": 330, "y": 465, "widthPx": 540, "heightPx": 270, "rotateDeg": -8 }
+    }
+  ]
+}
