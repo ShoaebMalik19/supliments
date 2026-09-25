@@ -3,7 +3,7 @@ import { privilegedDb } from "@/db/privileged";
 import { organizations, platformAdmins } from "@/db/schema";
 import { recordAudit } from "@/modules/audit";
 import { session } from "@/modules/auth/session";
-import { errorResponse, notFound } from "@/lib/http";
+import { errorResponse, json, notFound } from "@/lib/http";
 
 export type AdminContext = { userId: string };
 
@@ -77,7 +77,7 @@ export function adminRoute<P>(
       const admin = await requireAdmin();
       const out = await handler(admin, req, await args.params);
       if (out === null) throw notFound();
-      return out instanceof Response ? out : Response.json(out);
+      return out instanceof Response ? out : json(out);
     } catch (e) {
       return errorResponse(e);
     }

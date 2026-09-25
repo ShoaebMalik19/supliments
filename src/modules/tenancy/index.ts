@@ -4,7 +4,7 @@ import { withTenant, type TenantDb } from "@/db/tenant";
 import { brands, memberships, organizations, users } from "@/db/schema";
 import { recordAudit } from "@/modules/audit";
 import { session } from "@/modules/auth/session";
-import { errorResponse, forbidden, notFound, unauthorized } from "@/lib/http";
+import { errorResponse, forbidden, json, notFound, unauthorized } from "@/lib/http";
 import { can, type Permission, type Role } from "./roles";
 
 export { can, ROLES, type Role, type Permission } from "./roles";
@@ -102,7 +102,7 @@ export function tenantRoute<P>(
       const params = await args.params;
       const out = await withTenant(ctx.orgId, (t) => handler(ctx, t, req, params));
       if (out === null) throw notFound();
-      return out instanceof Response ? out : Response.json(out);
+      return out instanceof Response ? out : json(out);
     } catch (e) {
       return errorResponse(e);
     }
