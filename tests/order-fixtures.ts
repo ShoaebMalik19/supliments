@@ -110,3 +110,32 @@ export async function ingestStandardOrder(t: OrderTenant, over: Partial<External
   );
   return { order, res };
 }
+
+/** An order of `tenant`'s own brand, priced and awaiting payment. */
+export async function seedPricedOrder(tenant: Tenant) {
+  await ensureFeeSchedule();
+  const bp = await seedBrandProduct(tenant);
+  await approveLabel(tenant, bp.brandProduct.id);
+  const integration = await createIntegration(tenant);
+  const res = await ingestExternalOrder(
+    { orgId: tenant.org.id, integrationId: integration.id },
+    externalOrder([line({ sku: bp.skus[0]!.sku })]),
+  );
+  if (res.outcome !== "created" || res.status !== "awaiting_payment")
+    throw new Error("seed failed");
+  return res.orderId;
+}
+
+/** A needs_review order (SKU not sold by the brand) that becomes resolvable before returning. */
+export async function seedResolvableOrder(tenant: Tenant) {
+  await ensureFeeSchedule();
+  const bp = await seedBrandProduct(tenant);
+  const integration = await createIntegration(tenant);
+  const res = await ingestExternalOrder(
+    { orgId: tenant.org.id, integrationId: integration.id },
+    externalOrder([line({ sku: bp.skus[0]!.sku })]),
+  );
+  if (res.outcome !== "created" || res.status !== "needs_review") throw new Error("seed failed");
+  await approveLabel(tenant, bp.brandProduct.id);
+  return res.orderId;
+}

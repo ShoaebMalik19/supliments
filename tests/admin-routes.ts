@@ -1,5 +1,5 @@
 import { privilegedDb } from "@/db/privileged";
-import { catalogProducts, categories, fulfillmentCenters, skus } from "@/db/schema";
+import { catalogProducts, categories, feeSchedules, fulfillmentCenters, skus } from "@/db/schema";
 import type { createTenant } from "./helpers";
 import * as adminOrgRoute from "@/app/api/admin/orgs/[id]/route";
 import * as categoriesRoute from "@/app/api/admin/catalog/categories/route";
@@ -9,6 +9,13 @@ import * as productRoute from "@/app/api/admin/catalog/products/[id]/route";
 import * as skusRoute from "@/app/api/admin/catalog/skus/route";
 import * as skuRoute from "@/app/api/admin/catalog/skus/[id]/route";
 import * as skuCostsRoute from "@/app/api/admin/catalog/skus/[id]/costs/route";
+import * as feeSchedulesRoute from "@/app/api/admin/fee-schedules/route";
+import * as adminOrderRoute from "@/app/api/admin/orders/[id]/route";
+import * as markPaidRoute from "@/app/api/admin/orders/[id]/mark-paid/route";
+import * as resolveRoute from "@/app/api/admin/orders/[id]/resolve/route";
+import { desc } from "drizzle-orm";
+import { TEST_FEE_RULES } from "./helpers";
+import { seedPricedOrder, seedResolvableOrder } from "./order-fixtures";
 
 type Tenant = Awaited<ReturnType<typeof createTenant>>;
 export const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
@@ -64,6 +71,7 @@ export async function seedFulfillmentCenter() {
 }
 
 let fcId: string | undefined;
+let nextFeeScheduleStart = 0;
 let productId: string | undefined;
 
 /** Every route under src/app/api/admin MUST be listed; non-admins must get 404 on every method. */
@@ -123,10 +131,45 @@ export const adminRoutes: AdminRouteCase[] = [
       effectiveFrom: "2026-01-01T00:00:00Z",
     }),
   },
+  {
+    file: "src/app/api/admin/orders/[id]/route.ts",
+    module: adminOrderRoute,
+    id: seedPricedOrder,
+  },
+  {
+    file: "src/app/api/admin/orders/[id]/mark-paid/route.ts",
+    module: markPaidRoute,
+    id: seedPricedOrder,
+    body: () => ({ reference: "BANK-REF-1", note: "wire received" }),
+  },
+  {
+    file: "src/app/api/admin/orders/[id]/resolve/route.ts",
+    module: resolveRoute,
+    id: seedResolvableOrder,
+  },
+  {
+    file: "src/app/api/admin/fee-schedules/route.ts",
+    module: feeSchedulesRoute,
+    body: () => {
+      nextFeeScheduleStart += 86_400_000;
+      return {
+        currency: "USD",
+        effectiveFrom: new Date(nextFeeScheduleStart).toISOString(),
+        rules: TEST_FEE_RULES,
+      };
+    },
+  },
 ];
 
 /** Creates the rows that request bodies reference. */
 export async function prepareAdminRoutes() {
   fcId = await seedFulfillmentCenter();
   productId = await seedProduct();
+  const [latest] = await privilegedDb()
+    .select()
+    .from(feeSchedules)
+    .orderBy(desc(feeSchedules.effectiveFrom))
+    .limit(1);
+  const future = Date.parse("2400-01-01T00:00:00Z");
+  nextFeeScheduleStart = Math.max(future, (latest?.effectiveFrom.getTime() ?? 0) + 86_400_000);
 }
