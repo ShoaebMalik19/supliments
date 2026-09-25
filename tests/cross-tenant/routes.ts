@@ -1,7 +1,15 @@
 import { eq } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
 import { expect } from "vitest";
-import { assets, brandProducts, brands, catalogProducts, labels, memberships } from "@/db/schema";
+import {
+  assets,
+  brandProducts,
+  brands,
+  catalogProducts,
+  labels,
+  memberships,
+  orders,
+} from "@/db/schema";
 import {
   createAsset,
   createUser,
@@ -26,6 +34,9 @@ import * as brandProductLabelsRoute from "@/app/api/brand-products/[id]/labels/r
 import * as labelRoute from "@/app/api/labels/[id]/route";
 import * as labelSubmitRoute from "@/app/api/labels/[id]/submit/route";
 import { seedLabel, seedLabelledBrandProduct } from "../label-helpers";
+import * as ordersRoute from "@/app/api/orders/route";
+import * as orderRoute from "@/app/api/orders/[id]/route";
+import { seedPricedOrder } from "../order-fixtures";
 
 type Tenant = Awaited<ReturnType<typeof createTenant>>;
 export type Handler = (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
@@ -152,6 +163,15 @@ export const tenantRoutes: TenantRouteCase[] = [
     snapshot: labelSnapshot,
     read: [],
     mutate: [{ method: "POST", handler: labelSubmitRoute.POST }],
+  },
+  {
+    file: "src/app/api/orders/[id]/route.ts",
+    url: (id) => `http://test/api/orders/${id}`,
+    seed: seedPricedOrder,
+    snapshot: async (id) =>
+      (await privilegedDb().select().from(orders).where(eq(orders.id, id)))[0],
+    read: [orderRoute.GET],
+    mutate: [],
   },
 ];
 
@@ -296,6 +316,24 @@ export const unscopedTenantRoutes: UnscopedRouteCase[] = [
         "",
       );
       expect(res.status).toBe(200);
+    },
+  },
+  {
+    file: "src/app/api/orders/route.ts",
+    reason: "collection; lists only the caller's org orders",
+    check: async ({ A, B }) => {
+      const mine = await seedPricedOrder(A);
+      const theirs = await seedPricedOrder(B);
+      const res = await callRoute(
+        ordersRoute.GET as unknown as Handler,
+        "GET",
+        "http://test/x",
+        "",
+      );
+      expect(res.status).toBe(200);
+      const ids = ((await res.json()) as { orders: { id: string }[] }).orders.map((o) => o.id);
+      expect(ids).toContain(mine);
+      expect(ids).not.toContain(theirs);
     },
   },
 ];
