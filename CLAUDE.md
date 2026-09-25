@@ -113,6 +113,17 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   supersedes the previous approved version. Publishing/orders use `getApprovedLabel()`.
 - Tenants may INSERT open review items; closing is privileged (`admin.closeReviewItem`).
 
+### Orders, pricing, ledger (M4)
+
+- Order status changes only via `orders/state.ts` `transitionOrder` (row lock, order_event,
+  outbox row); `ORDER_TRANSITIONS` is the table. Cancel only before `submitted`; terminal states
+  have no exits. Ingest on `paid`; test orders ignored; non-catalog lines skipped, our-but-unmapped
+  lines → `needs_review`. Lines resolve by sync mapping (variant id), then SKU — never title.
+- One Charge per order (`pending_external`, key `order:{id}`); ledger lines sum to the charge;
+  the manual payment line is negative so a paid order nets to 0. `PaymentProvider` = `manual`.
+- A paid order stays `awaiting_payment` until fulfillment moves it to `submitted`
+  (job `fulfillment.order_paid`). Admin order actions resolve org privileged, then `withTenant`.
+
 ## Working rules
 
 - No comments that restate code. No UI component library yet. Commit per logical step.
