@@ -41,13 +41,18 @@ integrations · orders · fulfillment · billing · notifications · admin.
 - Tenant data is accessed only via `withTenant(orgId, fn)` (`src/db/tenant.ts`):
   it opens a transaction, `SET LOCAL ROLE app_user`, sets `app.current_org`, and
   hands out a `TenantDb` that injects `org_id` on insert and filters by it on read.
-- Every table with an `org_id` column has RLS ENABLED + FORCED and a policy on
-  `org_id = nullif(current_setting('app.current_org', true), '')::uuid`.
-  (Missing-ok variant chosen so an unset GUC yields zero rows instead of errors.)
-  `tests/schema.test.ts` fails CI if a table with `org_id` lacks this.
+- RLS is ENABLED on every public table. Tables with `org_id` get
+  `SELECT enable_tenant_rls('table', '<grants>')` in a custom migration: policy
+  `org_id = current_org_id()` (= `nullif(current_setting('app.current_org', true), '')::uuid`;
+  missing-ok so an unset GUC yields zero rows) for `app_user`, plus grants.
+  `tests/schema.test.ts` fails CI if a table lacks RLS or an org_id table lacks the policy.
+- Not FORCED: the table-owner connection role is the privileged path (Supabase's
+  `postgres` cannot create BYPASSRLS roles). `app_user` is NOLOGIN, non-owner, no bypass.
+- Supabase `anon`/`authenticated` get no grants on `public` (no PostgREST exposure).
 - Child tables carry their own denormalized `org_id` so RLS never needs joins.
 - `src/db/privileged.ts` (bypasses RLS) may only be imported by `modules/auth`,
-  `modules/admin`, `modules/jobs`, `modules/audit`, and tests — enforced by ESLint.
+  `modules/tenancy`, `modules/admin`, `modules/jobs`, `modules/audit`, and tests
+  (ESLint `no-restricted-imports`).
   Every privileged cross-tenant action writes an AuditLog row.
 - Cross-tenant access returns **404, never 403**. Every route touching tenant data
   must be registered in `tests/cross-tenant/routes.ts`; a meta-test fails if an

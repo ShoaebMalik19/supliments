@@ -4,6 +4,7 @@ const compat = new FlatCompat({ baseDirectory: import.meta.dirname });
 
 const privilegedAllowed = [
   "src/modules/auth/**",
+  "src/modules/tenancy/**",
   "src/modules/admin/**",
   "src/modules/jobs/**",
   "src/modules/audit/**",

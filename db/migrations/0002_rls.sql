@@ -88,7 +88,9 @@ SELECT enable_tenant_rls(t, 'SELECT, INSERT') FROM unnest(ARRAY[
   'order_events','ledger_entries','wallet_transactions'
 ]::regclass[]) AS t;
 --> statement-breakpoint
-SELECT enable_tenant_rls(t, 'SELECT') FROM unnest(ARRAY['audit_logs','review_queue_items']::regclass[]) AS t;
+SELECT enable_tenant_rls('audit_logs', 'SELECT, INSERT');
+--> statement-breakpoint
+SELECT enable_tenant_rls('review_queue_items', 'SELECT');
 --> statement-breakpoint
 SELECT enable_tenant_rls(t, 'INSERT') FROM unnest(ARRAY['job_queue','outbox_events']::regclass[]) AS t;
 --> statement-breakpoint
