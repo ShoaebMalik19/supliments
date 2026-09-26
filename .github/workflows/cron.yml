@@ -1,0 +1,38 @@
+# Drains the job queue on the deployed app.
+#
+# Vercel's Hobby plan only permits daily cron, which is far too slow for order
+# processing, so vercel.json keeps a daily safety net and this workflow is the
+# real scheduler. Scheduled runs are best-effort: GitHub may delay them under
+# load and disables schedules on repos with 60 days of no activity. Move the
+# schedule back into vercel.json on Vercel Pro and delete this file.
+name: Drain job queue
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: drain-job-queue
+  cancel-in-progress: false
+
+jobs:
+  drain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call the cron route
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "APP_URL and CRON_SECRET repository secrets are not set." >&2
+            exit 1
+          fi
+          # The route answers 404 when the bearer token does not match, so a
+          # non-2xx response here means misconfiguration, not an empty queue.
+          curl -fsS --max-time 60 --retry 2 --retry-delay 5 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_URL%/}/api/cron/jobs"

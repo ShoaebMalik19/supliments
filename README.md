@@ -65,7 +65,8 @@ The app needs a Supabase project for Auth and Storage:
 4. Make yourself a platform admin:
    `insert into platform_admins (user_id) select id from users where email = 'you@example.com';`
 5. Background jobs (publish, webhook processing, fulfillment, store pushes, the stuck-order
-   monitor) run when the cron route is called. Vercel calls it every minute. Locally:
+   monitor) run when the cron route is called. In production a scheduled GitHub
+   Actions workflow calls it every 5 minutes. Locally:
    `curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/jobs`.
 
 Plain pages:
@@ -101,7 +102,14 @@ Each step needs an account owner's access. In order:
    - `DATABASE_URL` must be the _transaction_ pooler (port 6543).
    - `NEXT_PUBLIC_SITE_URL` is the deployed URL.
    - `CRON_SECRET` must be set: Vercel sends it as `Authorization: Bearer` to `/api/cron/jobs`.
-   - **Cron:** `vercel.json` runs the job drain every minute, which needs a Pro plan. Hobby only allows daily crons: the deploy is rejected or jobs drain once a day. On Hobby, call `/api/cron/jobs` from an external scheduler instead (for example, a GitHub Actions `schedule:` workflow running `curl` with the bearer secret).
+   - **Cron:** Vercel Hobby only allows daily cron, so `vercel.json` keeps a daily
+     safety net (`0 3 * * *`) and the real scheduler is
+     `.github/workflows/cron.yml`, which curls `/api/cron/jobs` every 5 minutes
+     with the bearer secret. It needs two repository secrets: `APP_URL` (the
+     deployed origin) and `CRON_SECRET` (identical to the Vercel env var).
+     Scheduled Actions are best-effort and are disabled after 60 days of repo
+     inactivity. On Vercel Pro, move the schedule back into `vercel.json` and
+     delete the workflow.
 4. **Verify the deployment:**
    - `curl -H "Authorization: Bearer $CRON_SECRET" https://<app>/api/cron/jobs` returns job counts.
    - As a platform admin, `GET /api/admin/diagnostics/render` must return the pixel hashes pinned in `tests/golden-render.test.ts`.
