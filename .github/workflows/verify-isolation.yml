@@ -16,16 +16,14 @@ on:
         required: false
   schedule:
     - cron: "17 4 * * 1"
-  push:
-    branches: [verify-real-infra]
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      SUPABASE_URL: ${{ inputs.supabase_url || vars.SUPABASE_URL || 'https://jjqxncbwfulwzraarvln.supabase.co' }}
-      SUPABASE_ANON_KEY: ${{ inputs.anon_key || vars.SUPABASE_ANON_KEY || 'sb_publishable_1Xj2vTIImdVMJpvMWzUY1A_dOPtXEae' }}
+      SUPABASE_URL: ${{ inputs.supabase_url || vars.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ inputs.anon_key || vars.SUPABASE_ANON_KEY }}
       DATABASE_URL: ${{ secrets.VERIFY_DATABASE_URL }}
       VERIFY_EMAIL: ${{ secrets.VERIFY_EMAIL }}
       VERIFY_PASSWORD: ${{ secrets.VERIFY_PASSWORD }}
