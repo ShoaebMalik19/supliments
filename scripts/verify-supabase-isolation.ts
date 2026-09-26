@@ -112,6 +112,7 @@ if (!control.ok || control.headers.get("x-deny-reason"))
       "The probes cannot reach Supabase from here, so no isolation result would be valid.",
   );
 
+const roles = ["anon"];
 await suite("anon", key);
 const email = process.env.VERIFY_EMAIL;
 const password = process.env.VERIFY_PASSWORD;
@@ -126,6 +127,7 @@ if (email && password) {
     throw new Error(`sign-in failed for ${email}: ${JSON.stringify(session)}`);
   console.log(`signed in as ${email} (real Supabase session)`);
   await suite("authenticated", session.access_token);
+  roles.push("authenticated");
 } else {
   console.log("VERIFY_EMAIL/VERIFY_PASSWORD not set: authenticated role not probed");
 }
@@ -134,8 +136,14 @@ console.log(
   `${probes} probes against ${url}, ${TABLES.length} tables, ${FUNCTIONS.length} functions`,
 );
 if (leaks.length) {
+  if (process.env.GITHUB_ACTIONS)
+    for (const l of leaks)
+      console.log(`::error title=LEAK [${l.role}] ${l.probe}::${l.status} ${l.body}`);
   console.error("LEAKS:");
   for (const l of leaks) console.error(`  [${l.role}] ${l.probe} -> ${l.status} ${l.body}`);
   process.exit(1);
 }
-console.log("no read or write succeeded through the Data API, GraphQL or Storage");
+const summary = `${probes} probes, roles: ${roles.join("+")}, 0 leaks, 0 invalid — no read or write succeeded through the Data API, GraphQL or Storage`;
+console.log(summary);
+if (process.env.GITHUB_ACTIONS)
+  console.log(`::notice title=Live isolation probes (${url})::${summary}`);
