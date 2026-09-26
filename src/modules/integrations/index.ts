@@ -10,3 +10,4 @@ export {
 } from "./privileged";
 export { publishHash, requestPublish, runPublishJob } from "./publish";
 export { pushShipmentToStore, receiveShopifyWebhook, runReconcileJob, runWebhookJob } from "./sync";
+export { disconnectIntegration, listIntegrations } from "./manage";

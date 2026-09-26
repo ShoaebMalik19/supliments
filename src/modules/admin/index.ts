@@ -88,6 +88,8 @@ export {
   openReviewItem,
   closeReviewItem,
   listOpenReviewItems,
+  listReviewQueue,
+  resolveReviewItem,
   type ReviewItemType,
 } from "./review";
 export * from "./fee-schedules";
