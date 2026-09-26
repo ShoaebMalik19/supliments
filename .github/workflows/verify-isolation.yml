@@ -1,0 +1,41 @@
+# Verifies tenant isolation against the LIVE Supabase project (not the superuser test DB):
+#  - catalog audit: grants, roles, policies, storage (needs a read-capable DATABASE_URL secret)
+#  - live probes: every table/function/GraphQL/Storage through the public API as anon and, with
+#    VERIFY_EMAIL/VERIFY_PASSWORD secrets, as a real signed-in user.
+# Any successful read/write fails the job; an unreachable target fails it too (never a false pass).
+name: Verify isolation (live Supabase)
+
+on:
+  workflow_dispatch:
+    inputs:
+      supabase_url:
+        description: "Project URL (defaults to the SUPABASE_URL repository variable)"
+        required: false
+      anon_key:
+        description: "Publishable/anon key — public by design (defaults to SUPABASE_ANON_KEY variable)"
+        required: false
+  schedule:
+    - cron: "17 4 * * 1"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: ${{ inputs.supabase_url || vars.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ inputs.anon_key || vars.SUPABASE_ANON_KEY }}
+      DATABASE_URL: ${{ secrets.VERIFY_DATABASE_URL }}
+      VERIFY_EMAIL: ${{ secrets.VERIFY_EMAIL }}
+      VERIFY_PASSWORD: ${{ secrets.VERIFY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Catalog audit
+        if: env.DATABASE_URL != ''
+        run: npm run verify:catalog
+      - name: Live Data API / GraphQL / Storage probes
+        run: npm run verify:isolation

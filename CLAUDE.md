@@ -51,6 +51,14 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   `tests/supabase/supabase-roles.test.ts` reproduces Supabase's role model (non-superuser owner,
   default privileges, anon/authenticated/authenticator/service_role) and must stay green.
   `service_role` bypasses RLS by design: its key is server-only (storage signing, auth admin).
+- Live verification (real project, real roles): `npm run verify:catalog` (read-only DB audit of
+  grants/roles/policies/storage) and `npm run verify:isolation` (every table/function/GraphQL/
+  Storage via the public API as anon, and as a signed-in user with VERIFY_EMAIL/PASSWORD). The
+  probe counts a response as "denied" only if Supabase itself refused; a proxy/firewall block makes
+  the run invalid, never a pass. Workflow: `.github/workflows/verify-isolation.yml`.
+- `supabase_admin`'s default privileges still grant anon/authenticated everything it creates in
+  `public`, and we cannot revoke them. Never create objects in `public` from the dashboard or as
+  supabase_admin, and install extensions into the `extensions` schema. `verify:catalog` catches it.
 - Child tables carry their own `org_id`.
 - `src/db/privileged.ts` (bypasses RLS) may only be imported by modules auth, tenancy, admin,
   jobs, audit, `catalog/admin.ts` (catalog writes) and tests (ESLint). Every privileged
@@ -132,6 +140,9 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   so order webhooks are notifications only: the job re-fetches the order from the integration's
   own shop (`fetchOrder`) and ignores it if absent. Reconciler polls every 15 min with overlap.
 - Store pushes go through `pushShipmentToStore`/jobs; 401 → `needs_reauth`, pushes halt.
+- `SHOPIFY_API_VERSION` must stay inside Shopify's 12-month support window (a test fails 3 months
+  before it ages out). Orders need Partners "protected customer data" access, or order webhooks
+  and reads are refused.
 
 ### Orders, pricing, ledger (M4)
 

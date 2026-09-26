@@ -26,13 +26,28 @@ jobs:
           APP_URL: ${{ secrets.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          set -euo pipefail
-          if [ -z "${APP_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
-            echo "APP_URL and CRON_SECRET repository secrets are not set." >&2
+          set -uo pipefail
+          missing=0
+          for name in APP_URL CRON_SECRET; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error title=Missing repository secret::${name} is not set (Settings → Secrets and variables → Actions)."
+              missing=1
+            fi
+          done
+          [ "$missing" = 0 ] || exit 1
+          code=$(curl -sS -o body.json -w '%{http_code}' --max-time 60 --retry 2 --retry-delay 5 \
+            -H "Authorization: Bearer ${CRON_SECRET}" "${APP_URL%/}/api/cron/jobs") || {
+            echo "::error title=Cron route unreachable::Could not reach APP_URL (curl exit $?). Check the deployed origin."
+            exit 1
+          }
+          # The route answers 404 to a wrong bearer token, so 404 means misconfiguration.
+          if [ "$code" = 404 ]; then
+            echo "::error title=Cron route returned 404::CRON_SECRET does not match the Vercel env var, or APP_URL is not the deployed origin."
             exit 1
           fi
-          # The route answers 404 when the bearer token does not match, so a
-          # non-2xx response here means misconfiguration, not an empty queue.
-          curl -fsS --max-time 60 --retry 2 --retry-delay 5 \
-            -H "Authorization: Bearer ${CRON_SECRET}" \
-            "${APP_URL%/}/api/cron/jobs"
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+            echo "::error title=Cron route returned ${code}::$(head -c 300 body.json)"
+            exit 1
+          fi
+          { echo "### Job queue drained"; echo '```json'; cat body.json; echo; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Job queue drained::$(tr -d '\n' < body.json)"

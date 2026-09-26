@@ -15,7 +15,7 @@ import { normalizeShopifyOrder } from "./normalize";
 
 export { decimalToMinor, minorToDecimal } from "./money";
 
-export const SHOPIFY_API_VERSION = "2025-07";
+export const SHOPIFY_API_VERSION = "2026-07";
 
 /** Minimal scopes for what v1 does: publish products, read orders, fulfill merchant-managed orders. */
 export const DEFAULT_SHOPIFY_SCOPES =
