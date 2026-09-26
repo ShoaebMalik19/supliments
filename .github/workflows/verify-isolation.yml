@@ -7,6 +7,13 @@ name: Verify isolation (live Supabase)
 
 on:
   workflow_dispatch:
+    inputs:
+      supabase_url:
+        description: "Project URL (defaults to the SUPABASE_URL repository variable)"
+        required: false
+      anon_key:
+        description: "Publishable/anon key — public by design (defaults to SUPABASE_ANON_KEY variable)"
+        required: false
   schedule:
     - cron: "17 4 * * 1"
 
@@ -15,8 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-      SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+      SUPABASE_URL: ${{ inputs.supabase_url || vars.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ inputs.anon_key || vars.SUPABASE_ANON_KEY }}
       DATABASE_URL: ${{ secrets.VERIFY_DATABASE_URL }}
       VERIFY_EMAIL: ${{ secrets.VERIFY_EMAIL }}
       VERIFY_PASSWORD: ${{ secrets.VERIFY_PASSWORD }}
