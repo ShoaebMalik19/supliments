@@ -18,9 +18,9 @@
     "test:e2e": "vitest run tests/e2e",
     "db:generate": "drizzle-kit generate",
     "db:custom": "drizzle-kit generate --custom",
-    "db:migrate": "tsx scripts/migrate.ts",
-    "db:seed": "tsx scripts/seed.ts",
-    "db:seed:label-templates": "tsx scripts/seed-label-templates.ts",
+    "db:migrate": "tsx --env-file-if-exists=.env.local scripts/migrate.ts",
+    "db:seed": "tsx --env-file-if-exists=.env.local scripts/seed.ts",
+    "db:seed:label-templates": "tsx --env-file-if-exists=.env.local scripts/seed-label-templates.ts",
     "db:drift": "drizzle-kit generate && git diff --exit-code -- db/migrations && test -z \"$(git status --porcelain db/migrations)\""
   },
   "dependencies": {
