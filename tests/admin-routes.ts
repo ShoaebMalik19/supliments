@@ -21,6 +21,7 @@ import * as resolveRoute from "@/app/api/admin/orders/[id]/resolve/route";
 import { desc } from "drizzle-orm";
 import { TEST_FEE_RULES } from "./helpers";
 import { seedPricedOrder, seedResolvableOrder } from "./order-fixtures";
+import * as renderDiagnosticsRoute from "@/app/api/admin/diagnostics/render/route";
 import * as dispatchBatchesRoute from "@/app/api/admin/dispatch-batches/route";
 import * as dispatchFileRoute from "@/app/api/admin/dispatch-batches/[id]/file/route";
 import * as dispatchImportRoute from "@/app/api/admin/dispatch-batches/[id]/import/route";
@@ -202,6 +203,7 @@ export const adminRoutes: AdminRouteCase[] = [
     id: async () => (await exportedBatch()).batch.id,
     body: () => "order_reference,status\r\n",
   },
+  { file: "src/app/api/admin/diagnostics/render/route.ts", module: renderDiagnosticsRoute },
 ];
 
 /** Creates the rows that request bodies reference. */

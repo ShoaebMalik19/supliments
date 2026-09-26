@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import opentype from "opentype.js";
 import sharp from "sharp";
 import { PDFDocument } from "pdf-lib";
 import type { DesignState } from "./design";
@@ -10,9 +13,23 @@ import type { Box, FixedPanel, LabelTemplate, Mockup, PrintSpec, TextField } fro
 
 const MM_PER_INCH = 25.4;
 const PT_PER_INCH = 72;
-const FONT_FAMILY = "DejaVu Sans, Helvetica, Arial, sans-serif";
-/** Conservative average advance width; text is shrunk so it never overflows its box. */
-const GLYPH_WIDTH_EM = { normal: 0.65, bold: 0.75 } as const;
+/**
+ * Text is converted to vector paths with a font bundled in the repo (`assets/fonts`), so the
+ * rasterizer never resolves fonts from the host: output is identical on every machine.
+ */
+export const FONT_DIR = join(process.cwd(), "assets", "fonts");
+const FONT_FILES = { normal: "DejaVuSans.ttf", bold: "DejaVuSans-Bold.ttf" } as const;
+type Weight = keyof typeof FONT_FILES;
+const fonts: Partial<Record<Weight, opentype.Font>> = {};
+
+function font(weight: Weight): opentype.Font {
+  const buf = fonts[weight] ? null : readFileSync(join(FONT_DIR, FONT_FILES[weight]));
+  if (buf)
+    fonts[weight] = opentype.parse(
+      buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
+    );
+  return fonts[weight]!;
+}
 
 export const mmToPx = (mm: number, dpi: number) => (mm / MM_PER_INCH) * dpi;
 export const mmToPt = (mm: number) => (mm / MM_PER_INCH) * PT_PER_INCH;
@@ -52,22 +69,24 @@ function textElement(
   box: Box,
   o: {
     fontSizeMm: number;
-    weight: keyof typeof GLYPH_WIDTH_EM;
+    weight: Weight;
     align: TextField["align"];
     color: string;
     y?: number;
   },
 ) {
-  const glyphs = Math.max([...text].length, 1);
-  const size = Math.min(o.fontSizeMm, box.height, box.width / (glyphs * GLYPH_WIDTH_EM[o.weight]));
-  const anchor = { left: "start", center: "middle", right: "end" }[o.align];
-  const x = { left: box.x, center: box.x + box.width / 2, right: box.x + box.width }[o.align];
+  const f = font(o.weight);
+  const widthAt1 = Math.max(f.getAdvanceWidth(text, 1), 1e-6);
+  const size = Math.min(o.fontSizeMm, box.height, box.width / widthAt1);
+  const width = widthAt1 * size;
+  const x = {
+    left: box.x,
+    center: box.x + (box.width - width) / 2,
+    right: box.x + box.width - width,
+  }[o.align];
   const y = o.y ?? box.y + box.height / 2 + size * 0.35;
-  return (
-    `<text x="${n(x)}" y="${n(y)}" font-family="${FONT_FAMILY}" font-size="${n(size)}" ` +
-    `font-weight="${o.weight}" fill="${escapeXml(o.color)}" text-anchor="${anchor}">` +
-    `${escapeXml(text)}</text>`
-  );
+  const d = f.getPath(text, x, y, size).toPathData(4);
+  return d ? `<path d="${d}" fill="${escapeXml(o.color)}"/>` : "";
 }
 
 function panelElement(p: FixedPanel, id: string) {

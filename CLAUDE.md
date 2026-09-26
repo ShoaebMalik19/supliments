@@ -112,6 +112,10 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
 - Only drafts edit in place; other edits create version max+1. Approval freezes PDF + mockups and
   supersedes the previous approved version. Publishing/orders use `getApprovedLabel()`.
 - Tenants may INSERT open review items; closing is privileged (`admin.closeReviewItem`).
+- Text is drawn as vector paths from the bundled font (`assets/fonts`, DejaVu Sans, opentype.js);
+  never rely on host fonts. `tests/golden-render.test.ts` pins pixel hashes; the deployed runtime
+  reports the same at `GET /api/admin/diagnostics/render`. Font/template files are traced into
+  functions via `outputFileTracingIncludes` in next.config.ts.
 
 ### Shopify (M3)
 
