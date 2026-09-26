@@ -111,9 +111,12 @@ Each step needs an account owner's access. In order:
      inactivity. On Vercel Pro, move the schedule back into `vercel.json` and
      delete the workflow.
 4. **Verify the deployment:**
+   - Run the "Drain job queue" workflow manually. A failure annotation names the problem: a missing `APP_URL`/`CRON_SECRET` repository secret, a 404 (secret mismatch), or an unreachable origin. A success shows the job counts.
+   - Run "Verify isolation (live Supabase)" once it is on `main` (inputs: project URL and publishable key). Set the `VERIFY_DATABASE_URL` secret for the catalog audit, and `VERIFY_EMAIL`/`VERIFY_PASSWORD` (a seeded demo account) to probe as a signed-in user too.
    - `curl -H "Authorization: Bearer $CRON_SECRET" https://<app>/api/cron/jobs` returns job counts.
    - As a platform admin, `GET /api/admin/diagnostics/render` must return the pixel hashes pinned in `tests/golden-render.test.ts`.
 5. **Shopify:** create a Partners app.
    - App URL: `https://<app>`. Redirect URL: `https://<app>/api/integrations/shopify/callback`.
    - Put its key and secret in Vercel and redeploy.
+   - In the Partners dashboard, request **protected customer data access** for order data (name, address, email). Without it, Shopify refuses the `orders/*` webhook subscriptions at connect time (the connect succeeds, but the failure is only recorded in the audit log) and order reads fail. Reconciliation then can't fill the gap either.
    - Create a development store. Then, in the app: `/settings/stores` → connect → publish a product → place a test order in the store → `/admin/orders/<id>` mark paid → `/admin/dispatch` create batch → download → fill in tracking → import. Tracking should appear on the order in the Shopify admin.

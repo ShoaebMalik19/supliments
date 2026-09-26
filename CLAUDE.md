@@ -140,6 +140,9 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   so order webhooks are notifications only: the job re-fetches the order from the integration's
   own shop (`fetchOrder`) and ignores it if absent. Reconciler polls every 15 min with overlap.
 - Store pushes go through `pushShipmentToStore`/jobs; 401 → `needs_reauth`, pushes halt.
+- `SHOPIFY_API_VERSION` must stay inside Shopify's 12-month support window (a test fails 3 months
+  before it ages out). Orders need Partners "protected customer data" access, or order webhooks
+  and reads are refused.
 
 ### Orders, pricing, ledger (M4)
 
