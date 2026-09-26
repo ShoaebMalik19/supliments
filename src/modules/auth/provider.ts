@@ -17,3 +17,8 @@ export interface SessionSource {
   preferredOrgId(): Promise<string | null>;
   requestMeta(): Promise<{ ip: string | null; userAgent: string | null }>;
 }
+
+/** Server-side user administration (seed, ops). Creates confirmed accounts that can sign in. */
+export interface AuthAdmin {
+  ensureUser(email: string, password: string): Promise<{ id: string; created: boolean }>;
+}

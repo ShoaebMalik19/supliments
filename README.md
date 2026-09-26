@@ -44,7 +44,7 @@ The seed is idempotent. It creates:
 - **Platform data:** a fee schedule; a manufacturer and fulfillment center using the spreadsheet adapter; the **placeholder** 60-capsule label template (loaded from `db/seed/label-templates/placeholder-60ct-bottle.json`); and one active `on_demand` catalog product with two SKUs and partner SKU codes.
 - **Demo data:** an org ("Demo Supplements Co.") with a brand, a brand product, an approved label (real PDF and mockups rendered to `.data/storage/`), and a paid sample order awaiting payment confirmation.
 
-The seed's users are not Supabase accounts, so you can't sign in as them. Sign up through the app instead (below).
+With `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and `SEED_DEMO_PASSWORD` set, the demo accounts are real, email-confirmed Supabase users you can sign in as: `demo-owner@example.com` (brand owner) and `demo-admin@example.com` (platform admin), both with `SEED_DEMO_PASSWORD`. Without those variables the demo users are local-only and cannot sign in.
 
 ## Run the app
 

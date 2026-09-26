@@ -64,6 +64,13 @@
       "when": 1790369515090,
       "tag": "0008_shopify_review_type",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790407392671,
+      "tag": "0009_revoke_function_execute",
+      "breakpoints": true
     }
   ]
 }
