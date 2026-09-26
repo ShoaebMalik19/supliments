@@ -82,3 +82,30 @@ Plain pages:
 | `src/app`            | Thin routes and pages                                                                                           |
 | `db/migrations`      | Drizzle-generated DDL + hand-written RLS/trigger migrations                                                     |
 | `tests/cross-tenant` | Permanent isolation suite: every tenant route must be registered                                                |
+
+## Deploy (Supabase + Vercel + Shopify)
+
+Each step needs an account owner's access. In order:
+
+1. **Supabase:** create a project for this app. Don't reuse an unrelated project: migration `0002` revokes Data API grants on the whole `public` schema, which would break another app sharing it.
+   - Create a **private** Storage bucket named after `ASSETS_BUCKET`.
+   - Set Auth → URL configuration → Site URL to the deployed URL, and add `https://<app>/auth/callback` as a redirect URL.
+2. **Migrate and seed** from a machine that can reach the database. Use the _session_ pooler (port 5432) or the direct connection for migrations:
+   ```bash
+   DATABASE_URL=<session or direct url> npm run db:migrate
+   DATABASE_URL=<…> NEXT_PUBLIC_SUPABASE_URL=<…> SUPABASE_SERVICE_ROLE_KEY=<…> \
+     SEED_DEMO_PASSWORD=<choose one> ASSETS_BUCKET=<…> npm run db:seed
+   ```
+   The seed writes rendered files to local disk (`.data/storage`), not to Supabase Storage, so the demo label's images aren't viewable in the deployed app. Labels made through the app are stored in Supabase Storage.
+3. **Vercel:** import the GitHub repo, framework Next.js. Set every variable in `.env.example`:
+   - `DATABASE_URL` must be the _transaction_ pooler (port 6543).
+   - `NEXT_PUBLIC_SITE_URL` is the deployed URL.
+   - `CRON_SECRET` must be set: Vercel sends it as `Authorization: Bearer` to `/api/cron/jobs`.
+   - **Cron:** `vercel.json` runs the job drain every minute, which needs a Pro plan. Hobby only allows daily crons: the deploy is rejected or jobs drain once a day. On Hobby, call `/api/cron/jobs` from an external scheduler instead (for example, a GitHub Actions `schedule:` workflow running `curl` with the bearer secret).
+4. **Verify the deployment:**
+   - `curl -H "Authorization: Bearer $CRON_SECRET" https://<app>/api/cron/jobs` returns job counts.
+   - As a platform admin, `GET /api/admin/diagnostics/render` must return the pixel hashes pinned in `tests/golden-render.test.ts`.
+5. **Shopify:** create a Partners app.
+   - App URL: `https://<app>`. Redirect URL: `https://<app>/api/integrations/shopify/callback`.
+   - Put its key and secret in Vercel and redeploy.
+   - Create a development store. Then, in the app: `/settings/stores` → connect → publish a product → place a test order in the store → `/admin/orders/<id>` mark paid → `/admin/dispatch` create batch → download → fill in tracking → import. Tracking should appear on the order in the Shopify admin.
