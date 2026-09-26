@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { closeDb } from "../src/db/client";
@@ -17,6 +16,7 @@ import { ingestExternalOrder } from "../src/modules/orders";
 import { provisionOrganization } from "../src/modules/tenancy";
 import { fsStorage } from "./seed/fs-storage";
 import { DEMO_SKUS, seedPlatform } from "./seed/platform";
+import { DEMO_ADMIN_EMAIL, DEMO_OWNER_EMAIL, demoUsers } from "./seed/users";
 
 const DEMO_ORG = "Demo Supplements Co.";
 const STORAGE_ROOT = process.env.SEED_STORAGE_DIR ?? ".data/storage";
@@ -32,16 +32,22 @@ const [existing] = await db.select().from(organizations).where(eq(organizations.
 if (existing) {
   console.log(`demo org exists (${existing.id}); nothing else to do`);
 } else {
-  const ownerId = randomUUID();
+  const accounts = demoUsers();
+  const ownerId = await accounts.resolve(DEMO_OWNER_EMAIL);
   const org = await provisionOrganization({
     userId: ownerId,
-    email: "owner@demo.local",
+    email: DEMO_OWNER_EMAIL,
     orgName: DEMO_ORG,
   });
-  const adminId = randomUUID();
-  await db.insert(users).values({ id: adminId, email: "admin@demo.local" });
-  await db.insert(platformAdmins).values({ userId: adminId });
-  const ctx = { userId: ownerId, email: "owner@demo.local", orgId: org.id, role: "owner" as const };
+  const adminId = await accounts.resolve(DEMO_ADMIN_EMAIL);
+  await db.insert(users).values({ id: adminId, email: DEMO_ADMIN_EMAIL }).onConflictDoNothing();
+  await db.insert(platformAdmins).values({ userId: adminId }).onConflictDoNothing();
+  console.log(
+    accounts.mode === "supabase"
+      ? `demo sign-ins: ${DEMO_OWNER_EMAIL} (brand owner), ${DEMO_ADMIN_EMAIL} (platform admin); password = SEED_DEMO_PASSWORD`
+      : "Supabase not configured: demo users are local-only and cannot sign in",
+  );
+  const ctx = { userId: ownerId, email: DEMO_OWNER_EMAIL, orgId: org.id, role: "owner" as const };
 
   const labelId = await withTenant(org.id, async (t) => {
     const [brand] = await t.tx.select().from(brands);

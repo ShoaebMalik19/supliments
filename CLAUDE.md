@@ -46,7 +46,12 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   if a table lacks RLS or an org_id table lacks the policy.
 - Not FORCED: the table-owner connection role is the privileged path (Supabase's
   `postgres` cannot create BYPASSRLS roles). `app_user` is NOLOGIN, non-owner, no bypass.
-- `anon`/`authenticated` get no grants on `public`. Child tables carry their own `org_id`.
+- `anon`/`authenticated` get no grants on `public` tables AND no EXECUTE on `public` functions
+  (Supabase's default privileges grant both; functions would be callable via `/rest/v1/rpc`).
+  `tests/supabase/supabase-roles.test.ts` reproduces Supabase's role model (non-superuser owner,
+  default privileges, anon/authenticated/authenticator/service_role) and must stay green.
+  `service_role` bypasses RLS by design: its key is server-only (storage signing, auth admin).
+- Child tables carry their own `org_id`.
 - `src/db/privileged.ts` (bypasses RLS) may only be imported by modules auth, tenancy, admin,
   jobs, audit, `catalog/admin.ts` (catalog writes) and tests (ESLint). Every privileged
   cross-tenant action writes an AuditLog row.
@@ -112,6 +117,10 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
 - Only drafts edit in place; other edits create version max+1. Approval freezes PDF + mockups and
   supersedes the previous approved version. Publishing/orders use `getApprovedLabel()`.
 - Tenants may INSERT open review items; closing is privileged (`admin.closeReviewItem`).
+- Text is drawn as vector paths from the bundled font (`assets/fonts`, DejaVu Sans, opentype.js);
+  never rely on host fonts. `tests/golden-render.test.ts` pins pixel hashes; the deployed runtime
+  reports the same at `GET /api/admin/diagnostics/render`. Font/template files are traced into
+  functions via `outputFileTracingIncludes` in next.config.ts.
 
 ### Shopify (M3)
 
@@ -148,10 +157,19 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   `shipment:{id}`); pushes never repeat. `fulfillment/platform.ts` is the privileged part.
 - Stuck monitor (hourly job): thresholds in `STUCK_THRESHOLDS`; one open review item per entity.
 
+### Operating without SQL
+
+- `/settings/stores` (tenant, owner/admin act): connect / reconnect (same OAuth install flow;
+  same shop reattaches) / disconnect (drops token, keeps history; app stays installed in Shopify,
+  its webhooks are ignored). `/admin/review`: every open review item with a link to act on;
+  resolve = done | dismissed with an audited note (`admin.resolveReviewItem`).
+
 ### Seed + E2E (M6)
 
 - `npm run db:seed` (idempotent): `scripts/seed/platform.ts` = platform data (also used by the
   E2E test); `scripts/seed.ts` adds a demo org using dev-only disk storage (`.data/storage`).
+  With Supabase env set, demo accounts (`demo-owner@example.com`, `demo-admin@example.com`) are
+  real confirmed Auth users with password `SEED_DEMO_PASSWORD`; otherwise local-only ids.
 - `tests/e2e/order-loop.test.ts` is the definition of "the loop works". Extend it, never weaken
   it; only session, storage and Shopify HTTP (`tests/fake-shopify.ts`) are faked.
 

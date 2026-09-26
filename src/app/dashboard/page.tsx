@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { organizations } from "@/db/schema";
 import { withTenant } from "@/db/tenant";
@@ -17,6 +18,10 @@ export default async function DashboardPage() {
       <h1>{org?.name}</h1>
       <p>
         Signed in as {ctx.email} ({ctx.role})
+      </p>
+      <p>
+        <Link href="/catalog">Catalog</Link> · <Link href="/orders">Orders</Link> ·{" "}
+        <Link href="/settings/stores">Store connections</Link>
       </p>
       <h2>Members</h2>
       <ul>

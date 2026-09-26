@@ -4,6 +4,9 @@ import { privilegedDb } from "@/db/privileged";
 import { brandProducts, integrations, jobQueue, oauthStates, webhookEvents } from "@/db/schema";
 import { setShopifyFetchForTests } from "@/adapters/shopify";
 import * as publishRoute from "@/app/api/brand-products/[id]/publish/route";
+import * as integrationsRoute from "@/app/api/integrations/route";
+import * as disconnectRoute from "@/app/api/integrations/[id]/disconnect/route";
+import { encryptSecret } from "@/modules/integrations/secrets";
 import * as webhookRoute from "@/app/api/webhooks/shopify/route";
 import { FakeShopify } from "../fake-shopify";
 import { seedBrandProduct } from "../helpers";
@@ -13,7 +16,13 @@ import {
   seedShopifyIntegration,
   uniqueShop,
 } from "../shopify-helpers";
-import type { TenantRouteCase, UnscopedCheckContext, UnscopedRouteCase } from "./routes";
+import {
+  callRoute,
+  type Handler,
+  type TenantRouteCase,
+  type UnscopedCheckContext,
+  type UnscopedRouteCase,
+} from "./routes";
 
 const fake = new FakeShopify();
 
@@ -24,7 +33,34 @@ async function publishJobs(brandProductId: string) {
     .where(sql`${jobQueue.payload}->>'brandProductId' = ${brandProductId}`);
 }
 
+async function seedConnected(owner: { org: { id: string }; brand: { id: string } }) {
+  const secret = encryptSecret("shpat_secret_token_value");
+  const [row] = await privilegedDb()
+    .insert(integrations)
+    .values({
+      orgId: owner.org.id,
+      brandId: owner.brand.id,
+      provider: "shopify",
+      externalShopId: `iso-${crypto.randomUUID()}.myshopify.com`,
+      domain: "iso.myshopify.com",
+      status: "connected",
+      credentialsCiphertext: secret.ciphertext,
+      credentialsKeyId: secret.keyId,
+    })
+    .returning();
+  return row!.id;
+}
+
 export const shopifyTenantRoutes: TenantRouteCase[] = [
+  {
+    file: "src/app/api/integrations/[id]/disconnect/route.ts",
+    url: (id) => `http://test/api/integrations/${id}/disconnect`,
+    seed: seedConnected,
+    snapshot: async (id) =>
+      (await privilegedDb().select().from(integrations).where(eq(integrations.id, id)))[0],
+    read: [],
+    mutate: [{ method: "POST", handler: disconnectRoute.POST }],
+  },
   {
     file: "src/app/api/brand-products/[id]/publish/route.ts",
     url: (id) => `http://test/api/brand-products/${id}/publish`,
@@ -49,6 +85,25 @@ export const shopifyTenantRoutes: TenantRouteCase[] = [
 ];
 
 export const shopifyUnscopedRoutes: UnscopedRouteCase[] = [
+  {
+    file: "src/app/api/integrations/route.ts",
+    reason: "collection; lists only the caller's org and never exposes credentials",
+    check: async ({ A, B }) => {
+      const mine = await seedConnected(A);
+      const theirs = await seedConnected(B);
+      const res = await callRoute(
+        integrationsRoute.GET as unknown as Handler,
+        "GET",
+        "http://test/api/integrations",
+        "",
+      );
+      const text = await res.text();
+      expect(res.status).toBe(200);
+      expect(text).toContain(mine);
+      expect(text).not.toContain(theirs);
+      expect(text).not.toMatch(/ciphertext|credential|shpat_/i);
+    },
+  },
   {
     file: "src/app/api/integrations/shopify/install/route.ts",
     reason: "create-only: the OAuth state is written to the caller's org for the caller's brand",

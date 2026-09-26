@@ -21,6 +21,10 @@ import * as resolveRoute from "@/app/api/admin/orders/[id]/resolve/route";
 import { desc } from "drizzle-orm";
 import { TEST_FEE_RULES } from "./helpers";
 import { seedPricedOrder, seedResolvableOrder } from "./order-fixtures";
+import * as reviewItemsRoute from "@/app/api/admin/review-items/route";
+import * as reviewItemRoute from "@/app/api/admin/review-items/[id]/route";
+import { reviewQueueItems } from "@/db/schema";
+import * as renderDiagnosticsRoute from "@/app/api/admin/diagnostics/render/route";
 import * as dispatchBatchesRoute from "@/app/api/admin/dispatch-batches/route";
 import * as dispatchFileRoute from "@/app/api/admin/dispatch-batches/[id]/file/route";
 import * as dispatchImportRoute from "@/app/api/admin/dispatch-batches/[id]/import/route";
@@ -201,6 +205,25 @@ export const adminRoutes: AdminRouteCase[] = [
     module: dispatchImportRoute,
     id: async () => (await exportedBatch()).batch.id,
     body: () => "order_reference,status\r\n",
+  },
+  { file: "src/app/api/admin/diagnostics/render/route.ts", module: renderDiagnosticsRoute },
+  { file: "src/app/api/admin/review-items/route.ts", module: reviewItemsRoute },
+  {
+    file: "src/app/api/admin/review-items/[id]/route.ts",
+    module: reviewItemRoute,
+    id: async (t) => {
+      const [item] = await privilegedDb()
+        .insert(reviewQueueItems)
+        .values({
+          orgId: t.org.id,
+          type: "claim",
+          entityType: "order",
+          entityId: crypto.randomUUID(),
+        })
+        .returning();
+      return item!.id;
+    },
+    body: () => ({ status: "done", note: "handled" }),
   },
 ];
 

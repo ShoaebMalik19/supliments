@@ -406,7 +406,7 @@ describe("renderer", () => {
     images: {},
   });
 
-  it("XML-escapes every piece of user text", async () => {
+  it("user text never reaches the SVG as markup: it is rendered as bundled-font paths", async () => {
     const evil = `</text><script>alert(1)</script>&"'`;
     const template = placeholder();
     const svg = await labelSvg(input(template, { brandName: evil.slice(0, 24), tagline: evil }), {
@@ -414,7 +414,9 @@ describe("renderer", () => {
       includeBleed: false,
     });
     expect(svg).not.toContain("<script");
-    expect(svg).toContain("&lt;/text&gt;&lt;script&gt;alert(1)&lt;/script&gt;&amp;&quot;&apos;");
+    expect(svg).not.toContain("alert");
+    expect(svg).not.toContain("<text");
+    expect(svg).toMatch(/<path d="M/);
     const png = await renderLabelPng(input(template, { tagline: evil }), {
       dpi: 72,
       includeBleed: false,
