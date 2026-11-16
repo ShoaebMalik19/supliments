@@ -11,6 +11,7 @@ export interface StorageProvider {
   remove(bucket: string, key: string): Promise<void>;
   putObject(bucket: string, key: string, data: Uint8Array, contentType: string): Promise<void>;
   getObject(bucket: string, key: string): Promise<Uint8Array | null>;
+  bucketVisibility(bucket: string): Promise<"private" | "public" | "missing">;
 }
 
 let override: StorageProvider | null = null;

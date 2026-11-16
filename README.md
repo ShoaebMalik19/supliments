@@ -49,15 +49,15 @@ signup → create brand → pick a catalog product → upload logo → design a 
 
 ## 🧱 Tech Stack
 
-| Layer | Tools |
-| --- | --- |
-| App | Next.js 15 (App Router), React 19, TypeScript (strict) |
-| Data | PostgreSQL, Drizzle ORM + drizzle-kit, hand-written RLS/trigger migrations |
-| Auth & storage | Supabase Auth and Storage (`@supabase/ssr`, `@supabase/supabase-js`) |
-| Rendering | `pdf-lib`, `opentype.js`, `sharp` |
-| Validation | Zod |
-| Testing | Vitest (unit, cross-tenant isolation, E2E) |
-| Hosting & jobs | Vercel, GitHub Actions scheduled workflow |
+| Layer          | Tools                                                                      |
+| -------------- | -------------------------------------------------------------------------- |
+| App            | Next.js 15 (App Router), React 19, TypeScript (strict)                     |
+| Data           | PostgreSQL, Drizzle ORM + drizzle-kit, hand-written RLS/trigger migrations |
+| Auth & storage | Supabase Auth and Storage (`@supabase/ssr`, `@supabase/supabase-js`)       |
+| Rendering      | `pdf-lib`, `opentype.js`, `sharp`                                          |
+| Validation     | Zod                                                                        |
+| Testing        | Vitest (unit, cross-tenant isolation, E2E)                                 |
+| Hosting & jobs | Vercel, GitHub Actions scheduled workflow                                  |
 
 ## 🗂️ Project Structure
 
@@ -110,16 +110,16 @@ npm run typecheck && npm run lint && npm run build
    cp .env.example .env.local
    ```
 
-   | Variable | Purpose |
-   | --- | --- |
-   | `DATABASE_URL` | Postgres connection (transaction pooler on hosted Supabase) |
-   | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Supabase project credentials |
-   | `NEXT_PUBLIC_SITE_URL` | Public URL of the app |
-   | `ASSETS_BUCKET` | Name of a **private** Supabase Storage bucket |
-   | `INTEGRATION_ENCRYPTION_KEY` | Generate with `openssl rand -base64 32` |
-   | `CRON_SECRET` | Any long random string |
-   | `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_SCOPES` | From a Shopify Partners app (redirect URL: `$NEXT_PUBLIC_SITE_URL/api/integrations/shopify/callback`) |
-   | `SEED_DEMO_PASSWORD` | Optional; makes the seeded demo users real Supabase accounts |
+   | Variable                                                                                 | Purpose                                                                                               |
+   | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+   | `DATABASE_URL`                                                                           | Postgres connection (transaction pooler on hosted Supabase)                                           |
+   | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Supabase project credentials                                                                          |
+   | `NEXT_PUBLIC_SITE_URL`                                                                   | Public URL of the app                                                                                 |
+   | `ASSETS_BUCKET`                                                                          | Name of a **private** Supabase Storage bucket                                                         |
+   | `INTEGRATION_ENCRYPTION_KEY`                                                             | Generate with `openssl rand -base64 32`                                                               |
+   | `CRON_SECRET`                                                                            | Any long random string                                                                                |
+   | `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_SCOPES`                                | From a Shopify Partners app (redirect URL: `$NEXT_PUBLIC_SITE_URL/api/integrations/shopify/callback`) |
+   | `SEED_DEMO_PASSWORD`                                                                     | Optional; makes the seeded demo users real Supabase accounts                                          |
 
 2. Migrate and (optionally) seed:
 

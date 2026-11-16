@@ -73,4 +73,10 @@ export const supabaseStorage: StorageProvider = {
     }
     return new Uint8Array(await data.arrayBuffer());
   },
+
+  async bucketVisibility(bucket) {
+    const { data, error } = await serviceClient().storage.getBucket(bucket);
+    if (error || !data) return "missing";
+    return data.public ? "public" : "private";
+  },
 };

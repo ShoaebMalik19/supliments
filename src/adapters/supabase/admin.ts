@@ -25,4 +25,18 @@ export const supabaseAuthAdmin: AuthAdmin = {
     if (updated.error) throw updated.error;
     return { id: existing.id, created: false };
   },
+
+  async health() {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return { reachable: false, emailSignup: null, detail: "env not set" };
+    try {
+      const res = await fetch(`${url}/auth/v1/settings`, { headers: { apikey: key } });
+      if (!res.ok) return { reachable: false, emailSignup: null, detail: `HTTP ${res.status}` };
+      const body = (await res.json()) as { external?: { email?: boolean } };
+      return { reachable: true, emailSignup: body.external?.email ?? null, detail: "ok" };
+    } catch (e) {
+      return { reachable: false, emailSignup: null, detail: (e as Error).message.slice(0, 120) };
+    }
+  },
 };

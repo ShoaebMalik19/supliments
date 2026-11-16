@@ -13,6 +13,12 @@ export const GOLDEN_TEMPLATE = join(
   "placeholder-60ct-bottle.json",
 );
 
+/** Pinned pixel hashes of the reference label; every runtime must reproduce them exactly. */
+export const GOLDEN_HASHES: Record<string, string> = {
+  "pixels@72dpi": "f7e4267ade038638903db71643d323845ba618840a890005db97c01c2a5f19d5",
+  "pixels@300dpi": "9d4d18f322da405a7745328b041fe0d462befe9c45b792e5b09e6626ddb934fd",
+};
+
 const sha = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
 
 /**

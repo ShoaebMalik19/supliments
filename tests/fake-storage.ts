@@ -42,6 +42,12 @@ export class FakeStorage implements StorageProvider {
     return this.objects.get(`${bucket}/${key}`) ?? null;
   }
 
+  visibility: "private" | "public" | "missing" = "private";
+
+  async bucketVisibility() {
+    return this.visibility;
+  }
+
   async remove(bucket: string, key: string) {
     this.objects.delete(`${bucket}/${key}`);
     this.removed.push(`${bucket}/${key}`);

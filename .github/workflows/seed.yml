@@ -1,0 +1,53 @@
+# Applies pending migrations, then seeds platform data and the demo org (idempotent), creating the
+# demo accounts as real Supabase Auth users. Repository secrets:
+#   SEED_DATABASE_URL          session pooler (port 5432) or direct connection string
+#   SUPABASE_URL               https://<ref>.supabase.co
+#   SUPABASE_SERVICE_ROLE_KEY  server-only key
+#   SEED_DEMO_PASSWORD         password for demo-owner@example.com / demo-admin@example.com
+#   ASSETS_BUCKET              optional, defaults to assets-private
+name: Migrate and seed (Supabase)
+
+on:
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "Also run the seed (untick to only apply migrations)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: migrate-and-seed
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.SEED_DATABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SEED_DEMO_PASSWORD: ${{ secrets.SEED_DEMO_PASSWORD }}
+      ASSETS_BUCKET: ${{ secrets.ASSETS_BUCKET || 'assets-private' }}
+    steps:
+      - name: Check secrets
+        run: |
+          missing=0
+          for name in DATABASE_URL NEXT_PUBLIC_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY SEED_DEMO_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error title=Missing repository secret::the secret feeding ${name} is not set (see the comment at the top of this workflow)."
+              missing=1
+            fi
+          done
+          exit $missing
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply migrations
+        run: npm run db:migrate
+      - name: Seed
+        if: inputs.seed
+        run: npm run db:seed

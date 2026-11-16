@@ -17,6 +17,14 @@ export { decimalToMinor, minorToDecimal } from "./money";
 
 export const SHOPIFY_API_VERSION = "2026-07";
 
+/** Days until Shopify stops serving the pinned version (each is supported for 12 months). */
+export function apiVersionSupportDaysLeft(now = Date.now(), version = SHOPIFY_API_VERSION) {
+  const m = /^(\d{4})-(01|04|07|10)$/.exec(version);
+  if (!m) return -Infinity;
+  const ends = Date.UTC(Number(m[1]) + 1, Number(m[2]) - 1, 1);
+  return Math.floor((ends - now) / 86_400_000);
+}
+
 /** Minimal scopes for what v1 does: publish products, read orders, fulfill merchant-managed orders. */
 export const DEFAULT_SHOPIFY_SCOPES =
   "write_products,read_orders,write_merchant_managed_fulfillment_orders";

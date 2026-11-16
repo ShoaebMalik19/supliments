@@ -33,6 +33,9 @@ export function fsStorage(root: string): StorageProvider {
       await mkdir(dirname(p), { recursive: true });
       await writeFile(p, data);
     },
+    async bucketVisibility() {
+      return "private";
+    },
     async getObject(bucket, key) {
       try {
         await stat(path(bucket, key));
