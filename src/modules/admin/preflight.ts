@@ -11,6 +11,7 @@ import type { AuthAdmin } from "@/modules/auth/provider";
 import { decryptSecret, encryptSecret } from "@/modules/integrations/secrets";
 import { STALE_LOCK_SECONDS } from "@/modules/jobs";
 import { GOLDEN_HASHES, goldenRender } from "@/modules/labels/golden";
+import { emailProvider, pendingNotificationCount } from "@/modules/notifications";
 import journal from "../../../db/migrations/meta/_journal.json";
 
 export type CheckStatus = "ok" | "warn" | "fail";
@@ -222,6 +223,18 @@ export async function preflight(
       const detail = `pending ${r!.pending}, dead ${r!.dead}, stale ${r!.stale}, oldest due ${r!.oldest_due_s}s`;
       if (Number(r!.dead) || Number(r!.stale) || r!.oldest_due_s > 1800) return ["warn", detail];
       return ["ok", detail];
+    }),
+  );
+
+  checks.push(
+    await run("email.provider", async () => {
+      const pending = await pendingNotificationCount();
+      if (!emailProvider())
+        return [
+          "warn",
+          `no email provider (RESEND_API_KEY + EMAIL_FROM): ${pending} notifications waiting, none sent`,
+        ];
+      return ["ok", `configured, ${pending} pending`];
     }),
   );
 

@@ -14,6 +14,12 @@ import { completeEmailLink, setSessionSourceForTests, signUp } from "@/modules/a
 import { registerFulfillmentJobs } from "@/modules/fulfillment";
 import { registerIntegrationJobs } from "@/modules/integrations";
 import { drainJobs } from "@/modules/jobs";
+import {
+  publishOutbox,
+  sendPendingNotifications,
+  setEmailProviderForTests,
+  type EmailMessage,
+} from "@/modules/notifications";
 import { priceOrder, feeRulesSchema } from "@/modules/pricing";
 import * as brandsRoute from "@/app/api/brands/route";
 import * as catalogRoute from "@/app/api/catalog/products/route";
@@ -345,5 +351,30 @@ describe("MVP order loop, end to end", () => {
     ])
       expect(timeline).toContain(step);
     expect(detail.timeline.some((e: { toStatus: string }) => e.toStatus === "shipped")).toBe(true);
+
+    // 15. The brand owner was emailed at each milestone, once each.
+    const inbox: EmailMessage[] = [];
+    setEmailProviderForTests({
+      send: async (m) => {
+        inbox.push(m);
+        return { providerMessageId: null };
+      },
+    });
+    try {
+      await publishOutbox({ limit: 5000 });
+      await sendPendingNotifications({ limit: 5000 });
+      await sendPendingNotifications({ limit: 5000 });
+    } finally {
+      setEmailProviderForTests(undefined);
+    }
+    const mine = inbox.filter((m) => m.to === email).map((m) => m.subject);
+    expect(mine).toEqual([
+      expect.stringMatching(/^Label approved for /),
+      `Order ${storeOrder.name} received`,
+      `Order ${storeOrder.name} shipped`,
+    ]);
+    expect(inbox.find((m) => m.subject.endsWith("shipped") && m.to === email)!.text).toContain(
+      "1ZE2E",
+    );
   });
 });

@@ -78,7 +78,7 @@ export async function transitionOrder(
   meta: TransitionMeta,
 ) {
   const [current] = await t.tx
-    .select({ id: orders.id, status: orders.status })
+    .select({ id: orders.id, status: orders.status, number: orders.externalOrderNumber })
     .from(orders)
     .where(and(eq(orders.id, orderId), eq(orders.orgId, t.orgId)))
     .for("update");
@@ -109,7 +109,15 @@ export async function transitionOrder(
     aggregateType: "order",
     aggregateId: orderId,
     eventType: "order.status_changed",
-    payload: { orderId, from, to, type: meta.type },
+    payload: {
+      orderId,
+      orderNumber: current.number,
+      from,
+      to,
+      type: meta.type,
+      holdReason: holdReason ?? null,
+      details: meta.payload ?? {},
+    },
   });
   return updated!;
 }

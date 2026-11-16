@@ -1,10 +1,11 @@
 import { and, eq, max, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { TenantDb } from "@/db/tenant";
-import { labels, labelTemplates } from "@/db/schema";
+import { labels, labelTemplates, outboxEvents } from "@/db/schema";
 import { openReviewItem, type AdminContext } from "@/modules/admin";
 import { readAssetBytes, storeGeneratedAsset } from "@/modules/assets";
 import { recordAudit } from "@/modules/audit";
+import { kickQueue } from "@/modules/jobs";
 import {
   findBrandProduct,
   setBrandProductLabelState,
@@ -31,6 +32,21 @@ type Actor = { userId: string; actorType: "user" | "admin" };
 
 const conflict = (msg: string) => new HttpError(409, msg);
 const LOGO_MIMES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+async function emitLabelEvent(
+  t: TenantDb,
+  eventType: "label.approved" | "label.rejected",
+  payload: { labelId: string } & Record<string, unknown>,
+) {
+  await t.tx.insert(outboxEvents).values({
+    orgId: t.orgId,
+    aggregateType: "label",
+    aggregateId: payload.labelId,
+    eventType,
+    payload,
+  });
+  kickQueue();
+}
 
 export function labelView(l: Label) {
   return {
@@ -363,6 +379,11 @@ export async function approveSubmittedLabel(admin: AdminContext, t: TenantDb, id
       primaryMockupAssetId: mockups[0]?.id,
     });
   }
+  await emitLabelEvent(t, "label.approved", {
+    labelId: id,
+    version: label.version,
+    productTitle: bp?.title ?? null,
+  });
   await recordAudit(
     {
       orgId: t.orgId,
@@ -402,6 +423,12 @@ export async function rejectSubmittedLabel(
   const bp = await findBrandProduct(t, label.brandProductId);
   if (bp?.status === "pending_review")
     await setBrandProductLabelState(t, bp.id, { status: "draft" });
+  await emitLabelEvent(t, "label.rejected", {
+    labelId: id,
+    version: label.version,
+    productTitle: bp?.title ?? null,
+    reason,
+  });
   await recordAudit(
     {
       orgId: t.orgId,

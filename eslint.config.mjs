@@ -12,6 +12,7 @@ const privilegedAllowed = [
   "src/modules/labels/admin.ts",
   "src/modules/integrations/privileged.ts",
   "src/modules/fulfillment/platform.ts",
+  "src/modules/notifications/index.ts",
   "src/db/**",
   "tests/**",
   "scripts/**",
