@@ -1,6 +1,7 @@
 import { withTenant } from "@/db/tenant";
 import { integrations } from "@/db/schema";
 import { recordAudit } from "@/modules/audit";
+import { kickQueue } from "@/modules/jobs";
 import { ingestExternalOrder } from "@/modules/orders";
 import { commerce, IntegrationUnavailableError, loadIntegration, withStore } from "./connection";
 import { loadWebhookEvent, recordWebhookDelivery, settleWebhookEvent } from "./privileged";
@@ -26,6 +27,7 @@ export async function receiveShopifyWebhook(req: Request): Promise<Response> {
     return new Response(null, { status: 400 });
   }
   await recordWebhookDelivery({ provider: "shopify", ...meta, payload });
+  kickQueue();
   return new Response(null, { status: 200 });
 }
 

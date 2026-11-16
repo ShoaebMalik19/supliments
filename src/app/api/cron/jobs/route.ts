@@ -1,24 +1,15 @@
-import { timingSafeEqual } from "node:crypto";
-import { registerIntegrationJobs, scheduleReconciliation } from "@/modules/integrations";
-import { drainJobs } from "@/modules/jobs";
-import { registerFulfillmentJobs, scheduleStuckScan } from "@/modules/fulfillment";
+import { scheduleReconciliation } from "@/modules/integrations";
+import { scheduleStuckScan } from "@/modules/fulfillment";
+import { cronAuthorized } from "@/lib/cron-auth";
+import { drainQueue } from "@/queue";
 
 export const dynamic = "force-dynamic";
-
-function authorized(req: Request) {
-  const secret = process.env.CRON_SECRET;
-  const got = req.headers.get("authorization") ?? "";
-  const want = `Bearer ${secret}`;
-  return (
-    !!secret && got.length === want.length && timingSafeEqual(Buffer.from(got), Buffer.from(want))
-  );
-}
+export const maxDuration = 60;
 
 export async function GET(req: Request) {
-  if (!authorized(req)) return new Response("Not found", { status: 404 });
-  registerIntegrationJobs();
-  registerFulfillmentJobs();
+  if (!cronAuthorized(req)) return new Response("Not found", { status: 404 });
   const reconcileScheduled = await scheduleReconciliation();
   const stuckScanScheduled = await scheduleStuckScan();
-  return Response.json({ ...(await drainJobs()), reconcileScheduled, stuckScanScheduled });
+  const drained = await drainQueue({ budgetMs: 45_000 });
+  return Response.json({ ...drained, reconcileScheduled, stuckScanScheduled });
 }
