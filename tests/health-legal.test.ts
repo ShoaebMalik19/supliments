@@ -11,7 +11,7 @@ describe("GET /api/health", () => {
   it("answers 200 {ok:true} with the database up and reveals nothing else", async () => {
     const res = await health.GET();
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true });
+    expect(await res.json()).toEqual({ ok: true, commit: null });
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 });

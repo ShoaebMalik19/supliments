@@ -34,7 +34,8 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -uo pipefail
-          code=$(.github/scripts/call-app.sh /api/cron/jobs body.json 60) || exit 1
+          .github/scripts/call-app.sh /api/cron/jobs body.json 60 || exit 1
+          code=$(cat body.json.status)
           if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
             echo "::error title=Cron route returned ${code}::$(head -c 300 body.json)"
             exit 1
