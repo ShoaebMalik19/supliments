@@ -4,7 +4,13 @@ import { recordAudit } from "@/modules/audit";
 import { kickQueue } from "@/modules/jobs";
 import { ingestExternalOrder } from "@/modules/orders";
 import { commerce, IntegrationUnavailableError, loadIntegration, withStore } from "./connection";
-import { loadWebhookEvent, recordWebhookDelivery, settleWebhookEvent } from "./privileged";
+import {
+  loadWebhookEvent,
+  markWebhookDeferred,
+  recordWebhookDelivery,
+  settleWebhookEvent,
+} from "./privileged";
+import { handlePrivacyRequest } from "./privacy";
 import type { FulfillmentPush, WebhookKind } from "./provider";
 
 export const RECONCILE_OVERLAP_MS = 5 * 60 * 1000;
@@ -64,6 +70,7 @@ export async function runWebhookJob(
         result.outcome === "ignored" ? result.reason : null,
       );
     }
+    if (payload.kind === "privacy") return runPrivacyEvent(orgId, integration, ev, attempts);
     if (payload.kind === "app_uninstalled") {
       await disconnectIntegration(orgId, integration.id, ev.topic);
       return settleWebhookEvent(ev.id, attempts, "processed");
@@ -73,6 +80,43 @@ export async function runWebhookJob(
     await settleWebhookEvent(ev.id, attempts, "failed", errMessage(e));
     throw e;
   }
+}
+
+type WebhookEventRow = NonNullable<Awaited<ReturnType<typeof loadWebhookEvent>>>;
+
+/**
+ * Privacy topics run even for a disconnected store (shop/redact arrives after uninstall). The
+ * body names its shop and is covered by the HMAC, unlike the shop header: a body for another shop
+ * is ignored, so a replayed request can never redact or export a different tenant's customers.
+ */
+async function runPrivacyEvent(
+  orgId: string,
+  integration: { id: string; externalShopId: string },
+  ev: WebhookEventRow,
+  attempts: number,
+) {
+  const req = commerce().normalizePrivacyRequest(ev.topic, ev.payload);
+  if (!req) return settleWebhookEvent(ev.id, attempts, "ignored", "unusable privacy payload");
+  if (req.shop !== integration.externalShopId.toLowerCase())
+    return settleWebhookEvent(ev.id, attempts, "ignored", "payload shop differs from integration");
+  const out = await handlePrivacyRequest(orgId, integration.id, req, ev);
+  if (out.status === "deferred")
+    return markWebhookDeferred(
+      ev.id,
+      attempts,
+      `deferred: ${out.deferredOrders} order(s) still need their address; retrying daily`,
+    );
+  return settleWebhookEvent(ev.id, attempts, "processed");
+}
+
+/** Daily retry of a deferred privacy request, until its orders have shipped. */
+export async function runPrivacyRetryJob(orgId: string, payload: { webhookEventId: string }) {
+  const ev = await loadWebhookEvent(payload.webhookEventId);
+  if (!ev || ev.status !== "received" || !ev.integrationId) return;
+  const integration = await loadIntegration(orgId, ev.integrationId);
+  if (!integration)
+    return settleWebhookEvent(ev.id, ev.attempts + 1, "ignored", "integration not in org");
+  return runPrivacyEvent(orgId, integration, ev, ev.attempts + 1);
 }
 
 /** §9.7: uninstall stops all sync; history and mappings stay. The revoked token is dropped. */

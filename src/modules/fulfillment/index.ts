@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { withTenant, type TenantDb } from "@/db/tenant";
 import {
@@ -397,4 +397,23 @@ export function registerFulfillmentJobs() {
   registerJob(STUCK_SCAN_JOB, async () => {
     await scanStuckOrders();
   });
+}
+
+/** Drops the ship-to copy kept in fulfillment snapshots once an order's address is redacted. */
+export async function redactFulfillmentSnapshots(t: TenantDb, orderIds: string[]) {
+  if (!orderIds.length) return 0;
+  const rows = await t.tx
+    .update(fulfillmentOrders)
+    .set({
+      requestSnapshot: sql`jsonb_set(${fulfillmentOrders.requestSnapshot}, '{canonical,shipTo}', '{"redacted": true}'::jsonb)`,
+    })
+    .where(
+      and(
+        eq(fulfillmentOrders.orgId, t.orgId),
+        inArray(fulfillmentOrders.orderId, orderIds),
+        sql`${fulfillmentOrders.requestSnapshot} ? 'canonical'`,
+      ),
+    )
+    .returning({ id: fulfillmentOrders.id });
+  return rows.length;
 }

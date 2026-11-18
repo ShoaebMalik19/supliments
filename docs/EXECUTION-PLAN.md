@@ -59,6 +59,8 @@ Do these in order. Each one ends with a check.
    - App URL `https://<app>`, redirect URL `https://<app>/api/integrations/shopify/callback`.
    - **Request protected customer data access** (order name, address, email). Without it Shopify
      refuses the order webhooks at connect time and order reads fail.
+   - **Compliance webhooks:** set all three (customer data request, customer data erasure, shop
+     data erasure) to `https://<app>/api/webhooks/shopify`. The app handles them (see Phase D1).
 10. In Supabase Auth → URL configuration: Site URL = the deployed URL; add
     `https://<app>/auth/callback` as a redirect URL (email verification and password reset).
 
@@ -84,8 +86,10 @@ could show it, the PR says so (the house rule since PR #5).
 
 Ordered by risk to a paying customer, not by size.
 
-1. **Shopify compliance webhooks** (`customers/data_request`, `customers/redact`, `shop/redact`):
-   mandatory for App Store distribution and GDPR. Small; reuses webhook ingress.
+1. ~~**Shopify compliance webhooks**~~ **Done** (`phase-d`): data requests produce an export the
+   brand owner downloads from an email link; redactions scrub customer data, deferring orders
+   still in transit. Remaining gap: dispatch CSV files already handed to the manufacturer keep
+   addresses (they are the manufacturer's copy; lifecycle rules for our stored copies are D9).
 2. **Product publish via GraphQL.** REST product endpoints are legacy, and newer public apps must
    use GraphQL. The adapter boundary makes this a contained change behind `CommerceProvider`.
 3. **Retry the webhook subscription after connect** instead of only auditing the failure, and
@@ -98,6 +102,8 @@ Ordered by risk to a paying customer, not by size.
 7. **Real bottle photography** for mockups: data only (`mockup_spec.backgroundAssetId`).
 8. **Live payments** (§10), unblocked when a §18 default is decided; `PaymentProvider` already
    has the seam.
+9. **Retention for dispatch CSVs** in storage: delete our stored copy once a batch is completed
+   and past the claims window, so redacted customers' addresses don't persist there.
 
 ## Decisions the owner still owns
 

@@ -144,6 +144,14 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   so order webhooks are notifications only: the job re-fetches the order from the integration's
   own shop (`fetchOrder`) and ignores it if absent. Reconciler polls every 15 min with overlap.
 - Store pushes go through `pushShipmentToStore`/jobs; 401 → `needs_reauth`, pushes halt.
+- Privacy (Shopify compliance webhooks, configured in the Partners app, never via the API):
+  `customers/data_request` → JSON export as an org asset + owner email + review item due in 30
+  days; `customers/redact` / `shop/redact` → redact customer rows, order addresses (keep
+  `countryCode`), fulfillment snapshots and processed webhook payloads. Orders not yet shipped
+  keep their address: the request retries daily and escalates to `/admin/review` after 21 days.
+  The body's `shop_domain` must equal the integration's shop (HMAC covers the body, not the
+  header). Audit rows hold counts only. Each module redacts its own tables
+  (`orders.redactCustomerData`, `fulfillment.redactFulfillmentSnapshots`).
 - `SHOPIFY_API_VERSION` must stay inside Shopify's 12-month support window (a test fails 3 months
   before it ages out). Orders need Partners "protected customer data" access, or order webhooks
   and reads are refused. Dev-store checkouts (Bogus Gateway, test-mode payments) arrive with

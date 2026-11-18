@@ -2,7 +2,8 @@ import { z } from "zod";
 import { registerJob } from "@/modules/jobs";
 import { JOB_PROCESS_WEBHOOK, JOB_PUBLISH_PRODUCT, JOB_RECONCILE } from "./privileged";
 import { runPublishJob } from "./publish";
-import { runReconcileJob, runWebhookJob } from "./sync";
+import { JOB_PRIVACY_RETRY } from "./privacy";
+import { runPrivacyRetryJob, runReconcileJob, runWebhookJob } from "./sync";
 
 const requireOrg = (orgId: string | null) => {
   if (!orgId) throw new Error("integration job without org");
@@ -11,7 +12,7 @@ const requireOrg = (orgId: string | null) => {
 
 const webhookPayload = z.object({
   webhookEventId: z.uuid(),
-  kind: z.enum(["order", "app_uninstalled", "other"]),
+  kind: z.enum(["order", "app_uninstalled", "privacy", "other"]),
 });
 const integrationPayload = z.object({ integrationId: z.uuid() });
 const publishPayload = z.object({ brandProductId: z.uuid(), integrationId: z.uuid() });
@@ -22,6 +23,12 @@ export function registerIntegrationJobs() {
   });
   registerJob(JOB_RECONCILE, async (payload, job) => {
     await runReconcileJob(requireOrg(job.orgId), integrationPayload.parse(payload));
+  });
+  registerJob(JOB_PRIVACY_RETRY, async (payload, job) => {
+    await runPrivacyRetryJob(
+      requireOrg(job.orgId),
+      z.object({ webhookEventId: z.uuid() }).parse(payload),
+    );
   });
   registerJob(JOB_PUBLISH_PRODUCT, async (payload, job) => {
     await runPublishJob(requireOrg(job.orgId), publishPayload.parse(payload));

@@ -21,6 +21,7 @@ const WHAT = {
   payment_hold: "Payment not recorded in time",
   claim: "Customer claim",
   integration_conflict: "Store already connected to another organization",
+  privacy_request: "Customer privacy request (Shopify deadline: 30 days)",
 } as const;
 
 export default async function ReviewQueuePage() {

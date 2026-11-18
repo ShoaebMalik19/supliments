@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
 import { integrations, jobQueue, reviewQueueItems, webhookEvents } from "@/db/schema";
 import { recordAudit } from "@/modules/audit";
@@ -167,4 +167,62 @@ export async function flagIntegrationConflict(input: {
       tx,
     );
   });
+}
+
+export const REDACTED_PAYLOAD = { redacted: true };
+
+/**
+ * Raw webhook bodies keep a copy of customer data. Redacts those of one integration that concern
+ * the given orders or customer, or all of them (`wholeStore`). Events not yet processed keep their
+ * payload (a pending privacy request needs its own body to run), and so does `keepEventId`.
+ */
+export async function redactWebhookPayloads(
+  integrationId: string,
+  keepEventId: string,
+  who:
+    | { wholeStore: true }
+    | { externalOrderIds: string[]; externalCustomerId: string | null; email: string | null },
+) {
+  const scope = and(
+    eq(webhookEvents.integrationId, integrationId),
+    inArray(webhookEvents.status, ["processed", "ignored"]),
+    sql`${webhookEvents.id} <> ${keepEventId}`,
+    sql`not (${webhookEvents.payload} @> '{"redacted": true}'::jsonb)`,
+  );
+  const match =
+    "wholeStore" in who
+      ? undefined
+      : or(
+          who.externalOrderIds.length
+            ? inArray(sql`${webhookEvents.payload}->>'id'`, who.externalOrderIds)
+            : undefined,
+          who.externalCustomerId
+            ? sql`${webhookEvents.payload}->'customer'->>'id' = ${who.externalCustomerId}`
+            : undefined,
+          who.email
+            ? sql`lower(${webhookEvents.payload}->>'email') = lower(${who.email})`
+            : undefined,
+        );
+  if (!("wholeStore" in who) && !match) return 0;
+  const rows = await privilegedDb()
+    .update(webhookEvents)
+    .set({ payload: REDACTED_PAYLOAD })
+    .where(match ? and(scope, match) : scope)
+    .returning({ id: webhookEvents.id });
+  return rows.length;
+}
+
+export async function redactWebhookEvent(id: string) {
+  await privilegedDb()
+    .update(webhookEvents)
+    .set({ payload: REDACTED_PAYLOAD })
+    .where(eq(webhookEvents.id, id));
+}
+
+/** A privacy request that must run again later: keeps it `received`, records why. */
+export async function markWebhookDeferred(id: string, attempts: number, note: string) {
+  await privilegedDb()
+    .update(webhookEvents)
+    .set({ status: "received", attempts, error: note.slice(0, 500), processedAt: null })
+    .where(eq(webhookEvents.id, id));
 }

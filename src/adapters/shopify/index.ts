@@ -10,6 +10,7 @@ import {
   type WebhookKind,
 } from "@/modules/integrations/provider";
 import type { ExternalOrder } from "@/modules/orders/external";
+import { normalizeShopifyPrivacyRequest } from "./privacy";
 import { minorToDecimal } from "./money";
 import { normalizeShopifyOrder } from "./normalize";
 
@@ -43,6 +44,9 @@ const TOPIC_KIND: Record<string, WebhookKind> = {
   "orders/updated": "order",
   "orders/cancelled": "order",
   "app/uninstalled": "app_uninstalled",
+  "customers/data_request": "privacy",
+  "customers/redact": "privacy",
+  "shop/redact": "privacy",
 };
 
 const SHOP_RE = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/;
@@ -377,6 +381,7 @@ export const shopify: CommerceProvider = {
   },
 
   normalizeOrder: normalizeShopifyOrder,
+  normalizePrivacyRequest: normalizeShopifyPrivacyRequest,
   pushProduct,
   async fetchOrdersUpdatedSince(conn, since) {
     return (await fetchOrderUpdatesSince(conn, since)).orders;

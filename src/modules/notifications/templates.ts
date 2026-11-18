@@ -4,6 +4,7 @@ export const TEMPLATES = [
   "order_shipped",
   "label_approved",
   "label_rejected",
+  "privacy_data_request",
 ] as const;
 export type Template = (typeof TEMPLATES)[number];
 
@@ -24,6 +25,7 @@ export function templateFor(e: OutboxLike): Template | null {
   const p = (e.payload ?? {}) as P;
   if (e.eventType === "label.approved") return "label_approved";
   if (e.eventType === "label.rejected") return "label_rejected";
+  if (e.eventType === "privacy.data_request") return "privacy_data_request";
   if (e.eventType !== "order.status_changed") return null;
   if (p.to === "awaiting_payment" && p.from !== "awaiting_payment") return "order_received";
   if (p.to === "needs_review" || p.to === "on_hold") return "order_action_required";
@@ -60,6 +62,13 @@ export function renderEmail(template: Template, payload: unknown, siteUrl: strin
         subject: `Label approved for ${product}`,
         text: `Version ${clean(p.version, 6)} of the label for ${product} is approved. The print file is frozen and the product can be published to your store.\n\n${labelUrl}`,
       };
+    case "privacy_data_request": {
+      const due = clean(p.dueBy, 40).slice(0, 10) || "within 30 days";
+      return {
+        subject: `Customer data request from ${clean(p.shop, 120) || "your store"}`,
+        text: `A customer of ${clean(p.shop, 120) || "your store"} asked for the personal data held about them. We prepared an export of everything we hold for them (${clean(p.orderCount, 6) || "0"} order(s)).\n\nDownload it (sign-in required) and send it to the customer by ${due}:\n${base}/api/assets/${clean(p.assetId, 40)}/url?redirect=1`,
+      };
+    }
     case "label_rejected":
       return {
         subject: `Label needs changes for ${product}`,

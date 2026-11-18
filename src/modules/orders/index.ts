@@ -121,3 +121,4 @@ export async function recordOrderPayment(
   });
   return { alreadyPaid: paid.alreadyPaid, order, charge: paid.charge };
 }
+export { exportCustomerData, redactCustomerData, REDACTED, type PrivacySubject } from "./privacy";

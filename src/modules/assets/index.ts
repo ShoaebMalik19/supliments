@@ -170,7 +170,13 @@ export async function downloadUrl(t: TenantDb, id: string) {
 /** Server-generated asset (render output): bytes are ours, so it is `ready` on creation. */
 export async function storeGeneratedAsset(
   t: TenantDb,
-  input: { kind: AssetKind; mime: AllowedMime; data: Uint8Array; width?: number; height?: number },
+  input: {
+    kind: AssetKind;
+    mime: AllowedMime | "application/json";
+    data: Uint8Array;
+    width?: number;
+    height?: number;
+  },
 ) {
   const [{ id }] = (await t.tx.execute(sql`select uuid_generate_v7()::text as id`)) as unknown as [
     { id: string },

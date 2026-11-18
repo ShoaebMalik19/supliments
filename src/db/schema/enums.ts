@@ -202,6 +202,7 @@ export const reviewItemType = pgEnum("review_item_type", [
   "payment_hold",
   "claim",
   "integration_conflict",
+  "privacy_request",
 ]);
 export const reviewItemStatus = pgEnum("review_item_status", [
   "open",
