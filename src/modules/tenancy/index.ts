@@ -1,4 +1,5 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import type { Tx } from "@/db/client";
 import { privilegedDb } from "@/db/privileged";
 import { withTenant, type TenantDb } from "@/db/tenant";
 import { brands, memberships, organizations, users } from "@/db/schema";
@@ -26,7 +27,32 @@ export async function provisionOrganization(input: {
   email: string;
   orgName: string;
 }) {
+  return privilegedDb().transaction((tx) => provisionInTx(tx, input));
+}
+
+/**
+ * First sign-in without a signup form (social login): give the user their own org as owner,
+ * exactly once even if two callbacks race. Returns null when the user already belongs to one.
+ */
+export async function ensureOrganizationFor(input: { userId: string; email: string }) {
   return privilegedDb().transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${input.userId}))`);
+    const [existing] = await tx
+      .select({ id: memberships.id })
+      .from(memberships)
+      .where(eq(memberships.userId, input.userId))
+      .limit(1);
+    if (existing) return null;
+    const local = input.email
+      .split("@")[0]
+      ?.replace(/[^\p{L}\p{N} ._-]/gu, "")
+      .slice(0, 60);
+    return provisionInTx(tx, { ...input, orgName: `${local || "My"} brand` });
+  });
+}
+
+async function provisionInTx(tx: Tx, input: { userId: string; email: string; orgName: string }) {
+  {
     await tx
       .insert(users)
       .values({ id: input.userId, email: input.email })
@@ -54,7 +80,7 @@ export async function provisionOrganization(input: {
       tx,
     );
     return org!;
-  });
+  }
 }
 
 export async function resolveTenant(): Promise<TenantContext | null> {

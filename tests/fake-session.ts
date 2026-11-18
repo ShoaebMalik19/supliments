@@ -38,6 +38,10 @@ export class FakeSession implements SessionSource {
         a.password = password;
         return ok(a.user);
       },
+      oauthUrl: async (provider, redirectTo) => ({
+        ok: true,
+        url: `https://auth.test/authorize?provider=${provider}&redirect_to=${encodeURIComponent(redirectTo)}`,
+      }),
       exchangeCode: async (code) => {
         const a = this.accounts.get(code);
         if (!a) return { ok: false, error: "bad code" };

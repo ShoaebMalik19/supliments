@@ -147,7 +147,9 @@ export async function preflight(
       if (!h.reachable) return ["fail", `auth service: ${h.detail}`];
       return h.emailSignup === false
         ? ["fail", "email signup is disabled in Supabase Auth"]
-        : ["ok", "reachable, email signup on"];
+        : h.oauth && !h.oauth.google
+          ? ["warn", "Google sign-in is not enabled in Supabase Auth; the Google button will fail"]
+          : ["ok", "reachable, email signup on"];
     }),
   );
 

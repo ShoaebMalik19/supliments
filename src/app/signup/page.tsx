@@ -38,6 +38,9 @@ export default async function SignupPage({
         </p>
         <button type="submit">Sign up</button>
       </form>
+      <form action="/auth/oauth/google" method="get">
+        <button type="submit">Continue with Google</button>
+      </form>
     </main>
   );
 }

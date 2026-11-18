@@ -35,6 +35,15 @@ export const supabaseAuth: AuthProvider = {
     const { data, error } = await sb.auth.updateUser({ password });
     return result(error, data.user);
   },
+  async oauthUrl(provider, redirectTo) {
+    const sb = await supabaseServerClient();
+    const { data, error } = await sb.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo, skipBrowserRedirect: true },
+    });
+    if (error || !data.url) return { ok: false, error: error?.message ?? "OAuth unavailable" };
+    return { ok: true, url: data.url };
+  },
   async exchangeCode(code) {
     const sb = await supabaseServerClient();
     const { data, error } = await sb.auth.exchangeCodeForSession(code);

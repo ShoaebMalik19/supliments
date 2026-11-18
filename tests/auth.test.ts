@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
 import { auditLogs, brands, memberships, organizations, users } from "@/db/schema";
 import {
   completeEmailLink,
+  startOAuth,
   resetPassword,
   setSessionSourceForTests,
   signIn,
@@ -107,5 +109,43 @@ describe("tenant resolution", () => {
     expect(can("member", "members:manage")).toBe(false);
     expect(can("designer", "label:write")).toBe(true);
     expect(can("read_only", "brand:write")).toBe(false);
+  });
+});
+
+describe("social sign-in (Google)", () => {
+  it("only known providers start, and they return to our callback", async () => {
+    expect(await startOAuth("evil")).toBeNull();
+    const r = await startOAuth("google");
+    expect(r).toMatchObject({ ok: true });
+    if (!r?.ok) throw new Error();
+    expect(decodeURIComponent(r.url)).toMatch(/\/auth\/callback\?next=\/dashboard$/);
+  });
+
+  it("first sign-in provisions one org with the user as owner, exactly once, even when raced", async () => {
+    const email = `g-${randomUUID()}@example.com`;
+    const user = { id: randomUUID(), email };
+    session.accounts.set(email, { user, password: "", verified: true });
+    const results = await Promise.all([completeEmailLink(email), completeEmailLink(email)]);
+    expect(results.every((r) => r.ok)).toBe(true);
+    await completeEmailLink(email);
+    const rows = await privilegedDb()
+      .select()
+      .from(memberships)
+      .where(eq(memberships.userId, user.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.role).toBe("owner");
+    session.actAs(user);
+    expect(await resolveTenant()).toMatchObject({ orgId: rows[0]!.orgId, role: "owner" });
+  });
+
+  it("an existing member signing in through a link gets no extra org", async () => {
+    const t = await createTenant("Has org");
+    session.accounts.set(t.owner.email, { user: t.owner, password: "", verified: true });
+    expect((await completeEmailLink(t.owner.email)).ok).toBe(true);
+    const rows = await privilegedDb()
+      .select()
+      .from(memberships)
+      .where(eq(memberships.userId, t.owner.id));
+    expect(rows).toHaveLength(1);
   });
 });
