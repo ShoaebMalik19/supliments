@@ -180,6 +180,9 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   Statuses only move forward. A new shipment enqueues `fulfillment.push_to_store` (key
   `shipment:{id}`); pushes never repeat. `fulfillment/platform.ts` is the privileged part.
 - Stuck monitor (hourly job): thresholds in `STUCK_THRESHOLDS`; one open review item per entity.
+  An order flagged for payment (72 h) also emails the owner once (`order.payment_overdue`). The
+  same job deletes our stored dispatch sheet of completed/cancelled batches after
+  `DISPATCH_FILE_RETENTION_DAYS` (90; the sheets hold customer addresses), audited.
 
 ### Operating without SQL
 
@@ -209,6 +212,15 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   Never put a secret value in a check's detail (a test asserts this).
 - Workflows (manual): "Migrate and seed", "Preflight (deployed app)", "Drain job queue",
   "Verify isolation (live Supabase)". All report problems as annotations naming the cause.
+
+### Auth, monitoring, legal
+
+- Google sign-in via Supabase OAuth (`/auth/oauth/google` → `/auth/callback`). Any sign-in through
+  the callback runs `ensureOrganizationFor`: a user without a membership gets their own org as
+  owner (advisory lock, once). Owners rename org/brand on `/dashboard`.
+- `GET /api/health` (public): `{ok}` from a DB ping only. `src/instrumentation.ts` logs unhandled
+  server errors as one JSON line (message, digest, path; never bodies or headers).
+- `/terms`, `/privacy` serve counsel text from `content/legal/*.md` (none shipped; preflight warns).
 
 ### Notifications
 

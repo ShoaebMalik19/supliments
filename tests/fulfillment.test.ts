@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
 import {
+  assets,
+  auditLogs,
   outboxEvents,
   dispatchBatches,
   fulfillmentOrders,
@@ -23,6 +25,8 @@ import {
   importDispatchResults,
   pushShipment,
   scanStuckOrders,
+  purgeExpiredDispatchFiles,
+  DISPATCH_FILE_RETENTION_DAYS,
   submitPaidOrder,
 } from "@/modules/fulfillment";
 import { templateFor } from "@/modules/notifications";
@@ -313,5 +317,43 @@ describe("stuck-order monitor", () => {
       );
     expect(overdue).toHaveLength(1);
     expect(templateFor(overdue[0]!)).toBe("order_payment_overdue");
+  });
+});
+
+describe("dispatch file retention", () => {
+  it("deletes our stored sheet only for finished batches past the claims window, audited", async () => {
+    const { batch } = await exportedBatch();
+    const id = batch.id;
+    const [row] = await db().select().from(dispatchBatches).where(eq(dispatchBatches.id, id));
+    const fileId = row!.fileAssetId!;
+    const [file] = await db().select().from(assets).where(eq(assets.id, fileId));
+    const old = new Date(Date.now() - (DISPATCH_FILE_RETENTION_DAYS + 1) * 86400_000);
+    const age = (status: "exported" | "completed") =>
+      db().transaction(async (tx) => {
+        await tx.execute(sql`set local session_replication_role = replica`);
+        await tx
+          .update(dispatchBatches)
+          .set({ status, updatedAt: old })
+          .where(eq(dispatchBatches.id, id));
+      });
+
+    await age("exported");
+    await purgeExpiredDispatchFiles();
+    expect(
+      (await db().select().from(dispatchBatches).where(eq(dispatchBatches.id, id)))[0]!.fileAssetId,
+    ).toBe(fileId);
+
+    await age("completed");
+    await purgeExpiredDispatchFiles();
+    expect(
+      (await db().select().from(dispatchBatches).where(eq(dispatchBatches.id, id)))[0]!.fileAssetId,
+    ).toBeNull();
+    expect(await db().select().from(assets).where(eq(assets.id, fileId))).toHaveLength(0);
+    expect(fakeStorage.removed).toContain(`${file!.bucket}/${file!.storageKey}`);
+    const audits = await db()
+      .select()
+      .from(auditLogs)
+      .where(and(eq(auditLogs.action, "dispatch.file_purged"), eq(auditLogs.entityId, id)));
+    expect(audits).toHaveLength(1);
   });
 });

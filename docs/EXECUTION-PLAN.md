@@ -108,8 +108,8 @@ Ordered by risk to a paying customer, not by size.
 7. **Real bottle photography** for mockups: data only (`mockup_spec.backgroundAssetId`).
 8. **Live payments** (§10), unblocked when a §18 default is decided; `PaymentProvider` already
    has the seam.
-9. **Retention for dispatch CSVs** in storage: delete our stored copy once a batch is completed
-   and past the claims window, so redacted customers' addresses don't persist there.
+9. ~~**Retention for dispatch CSVs**~~ **Done**: stored sheets of completed/cancelled batches
+   are deleted after 90 days by the hourly job.
 
 ## Decisions the owner still owns
 

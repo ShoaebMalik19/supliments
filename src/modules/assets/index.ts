@@ -250,3 +250,13 @@ export async function signedUrlForAsset(
 export async function readAssetObject(asset: { bucket: string; storageKey: string }) {
   return storage().getObject(asset.bucket, asset.storageKey);
 }
+
+/** Deletes a platform-owned file and its row (retention). The caller must drop references first. */
+export async function removePlatformAsset(tx: Tx, id: string) {
+  const [row] = await tx
+    .delete(assets)
+    .where(and(eq(assets.id, id), isNull(assets.orgId)))
+    .returning({ bucket: assets.bucket, storageKey: assets.storageKey });
+  if (row) await storage().remove(row.bucket, row.storageKey);
+  return !!row;
+}

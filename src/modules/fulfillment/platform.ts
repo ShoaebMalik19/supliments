@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
 import type { Tx } from "@/db/client";
 import {
@@ -19,7 +19,7 @@ import {
   shipments,
   skus,
 } from "@/db/schema";
-import { signedUrlForAsset, storePlatformAsset } from "@/modules/assets";
+import { removePlatformAsset, signedUrlForAsset, storePlatformAsset } from "@/modules/assets";
 import type { CanonicalFulfillmentOrder, ShipTo } from "./provider";
 import { fulfillmentProvider } from "./providers";
 
@@ -329,6 +329,43 @@ export async function settleBatch(adminUserId: string, batchId: string, report: 
       entityId: batchId,
       after: report as object,
     });
+  });
+}
+
+/** Our copy of a dispatch sheet holds customer addresses; keep it only through the claims window. */
+export const DISPATCH_FILE_RETENTION_DAYS = 90;
+
+export async function purgeExpiredDispatchFiles(now = new Date()) {
+  const cutoff = new Date(now.getTime() - DISPATCH_FILE_RETENTION_DAYS * 86400_000);
+  return privilegedDb().transaction(async (tx) => {
+    const expired = await tx
+      .select({ id: dispatchBatches.id, fileAssetId: dispatchBatches.fileAssetId })
+      .from(dispatchBatches)
+      .where(
+        and(
+          inArray(dispatchBatches.status, ["completed", "cancelled"]),
+          isNotNull(dispatchBatches.fileAssetId),
+          lt(dispatchBatches.updatedAt, cutoff),
+        ),
+      )
+      .for("update", { skipLocked: true });
+    for (const b of expired) {
+      await tx
+        .update(dispatchBatches)
+        .set({ fileAssetId: null })
+        .where(eq(dispatchBatches.id, b.id));
+      await removePlatformAsset(tx, b.fileAssetId!);
+      await tx.insert(auditLogs).values({
+        orgId: null,
+        actorUserId: null,
+        actorType: "system",
+        action: "dispatch.file_purged",
+        entityType: "dispatch_batch",
+        entityId: b.id,
+        after: { retentionDays: DISPATCH_FILE_RETENTION_DAYS },
+      });
+    }
+    return expired.length;
   });
 }
 

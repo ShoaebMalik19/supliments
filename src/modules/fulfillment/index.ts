@@ -25,6 +25,7 @@ import {
   centerAdapterKey,
   getBatch,
   routeItems,
+  purgeExpiredDispatchFiles,
   scanStuckOrders,
   settleBatch,
   STUCK_SCAN_JOB,
@@ -42,6 +43,8 @@ export {
   scanStuckOrders,
   scheduleStuckScan,
   STUCK_THRESHOLDS,
+  purgeExpiredDispatchFiles,
+  DISPATCH_FILE_RETENTION_DAYS,
 } from "./platform";
 
 export const PUSH_TO_STORE_JOB = "fulfillment.push_to_store";
@@ -396,6 +399,7 @@ export function registerFulfillmentJobs() {
   });
   registerJob(STUCK_SCAN_JOB, async () => {
     await scanStuckOrders();
+    await purgeExpiredDispatchFiles();
   });
 }
 
