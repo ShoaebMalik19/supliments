@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { withTenant, type TenantDb } from "@/db/tenant";
 import {
@@ -420,4 +420,38 @@ export async function redactFulfillmentSnapshots(t: TenantDb, orderIds: string[]
     )
     .returning({ id: fulfillmentOrders.id });
   return rows.length;
+}
+
+/** Ops-entered shipment (partner phoned or emailed it in): same path as an imported row. */
+export async function recordManualShipment(
+  t: TenantDb,
+  orderId: string,
+  input: { carrier: string; trackingNumber: string; trackingUrl: string | null },
+) {
+  const open = await t.tx
+    .select({ id: fulfillmentOrders.id })
+    .from(fulfillmentOrders)
+    .where(
+      and(
+        eq(fulfillmentOrders.orgId, t.orgId),
+        eq(fulfillmentOrders.orderId, orderId),
+        notInArray(fulfillmentOrders.status, ["shipped", "cancelled"]),
+      ),
+    );
+  if (open.length !== 1)
+    return {
+      outcome: open.length ? ("ambiguous" as const) : ("no_open_fulfillment" as const),
+    };
+  const outcome = await applyUpdate(t, open[0]!.id, {
+    reference: open[0]!.id,
+    status: "shipped",
+    partnerStatus: "manual entry",
+    tracking: { number: input.trackingNumber, carrier: input.carrier, url: input.trackingUrl },
+    shippedAt: new Date(),
+    lotNumber: null,
+    batchCode: null,
+    expiresOn: null,
+    row: 0,
+  });
+  return { outcome };
 }

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
@@ -30,6 +31,7 @@ import {
   submitPaidOrder,
 } from "@/modules/fulfillment";
 import { templateFor } from "@/modules/notifications";
+import { adminRecordShipment } from "@/modules/admin";
 import { fakeStorage } from "./fake-storage";
 import { exportedBatch, seedCenter, submittedOrder } from "./fulfillment-fixtures";
 import { ingestStandardOrder, orderReadyTenant } from "./order-fixtures";
@@ -355,5 +357,35 @@ describe("dispatch file retention", () => {
       .from(auditLogs)
       .where(and(eq(auditLogs.action, "dispatch.file_purged"), eq(auditLogs.entityId, id)));
     expect(audits).toHaveLength(1);
+  });
+});
+
+describe("manual shipment entry (admin)", () => {
+  it("ships the order, enqueues the store push once, and refuses bad or repeated input", async () => {
+    const { orderId, admin } = await submittedOrder();
+    const me = { userId: admin.id };
+    await expect(adminRecordShipment(me, orderId, { carrier: "UPS" })).rejects.toMatchObject({
+      status: 400,
+    });
+    const tracking = `1Z${Date.now()}`;
+    const res = await adminRecordShipment(me, orderId, {
+      carrier: "UPS",
+      trackingNumber: tracking,
+    });
+    expect(res).toMatchObject({ outcome: "applied" });
+    expect((await orderRow(orderId)).status).toBe("shipped");
+    const [s] = await db().select().from(shipments).where(eq(shipments.trackingNumber, tracking));
+    expect(s).toMatchObject({ carrier: "UPS" });
+    const pushes = await db()
+      .select()
+      .from(jobQueue)
+      .where(eq(jobQueue.dedupeKey, `push:${s!.id}`));
+    expect(pushes).toHaveLength(1);
+    await expect(
+      adminRecordShipment(me, orderId, { carrier: "UPS", trackingNumber: "OTHER123" }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(
+      await adminRecordShipment(me, randomUUID(), { carrier: "UPS", trackingNumber: "X12" }),
+    ).toBeNull();
   });
 });

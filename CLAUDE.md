@@ -178,7 +178,8 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   order `submitted`. Missing partner SKU code blocks export and opens a review item.
 - Import is idempotent on our reference within the batch; shipment unique (carrier, tracking).
   Statuses only move forward. A new shipment enqueues `fulfillment.push_to_store` (key
-  `shipment:{id}`); pushes never repeat. `fulfillment/platform.ts` is the privileged part.
+  `push:{id}`; store idempotency key `shipment:{id}`); pushes never repeat. Admins can also
+  record a shipment by hand on `/admin/orders/[id]` (`adminRecordShipment`, same apply path). `fulfillment/platform.ts` is the privileged part.
 - Stuck monitor (hourly job): thresholds in `STUCK_THRESHOLDS`; one open review item per entity.
   An order flagged for payment (72 h) also emails the owner once (`order.payment_overdue`). The
   same job deletes our stored dispatch sheet of completed/cancelled batches after
