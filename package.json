@@ -23,7 +23,8 @@
     "verify:isolation": "tsx scripts/verify-supabase-isolation.ts",
     "db:seed": "tsx --env-file-if-exists=.env.local scripts/seed.ts",
     "db:seed:label-templates": "tsx --env-file-if-exists=.env.local scripts/seed-label-templates.ts",
-    "db:drift": "drizzle-kit generate && git diff --exit-code -- db/migrations && test -z \"$(git status --porcelain db/migrations)\""
+    "db:drift": "drizzle-kit generate && git diff --exit-code -- db/migrations && test -z \"$(git status --porcelain db/migrations)\"",
+    "build:vercel": "tsx scripts/vercel-build.ts && next build"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

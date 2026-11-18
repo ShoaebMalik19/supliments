@@ -214,8 +214,16 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   site URL vs deployment host, migrations, tenant path, API-role lockout, bucket privacy, storage
   round trip, auth, golden render hashes, Shopify API version, seed data, queue health, email.
   Never put a secret value in a check's detail (a test asserts this).
-- Workflows (manual): "Migrate and seed", "Preflight (deployed app)", "Drain job queue",
-  "Verify isolation (live Supabase)". All report problems as annotations naming the cause.
+- Production builds (`vercel.json` → `npm run build:vercel`, `scripts/vercel-build.ts`) apply
+  migrations (session pooler; failure aborts the deploy) and run the idempotent seed (failure only
+  warns). Preview builds never migrate: they share the production database.
+- Cron routes accept the `CRON_SECRET` bearer (Vercel cron) or a GitHub Actions OIDC token from
+  `CRON_GITHUB_REPOSITORY`'s main branch (audience `supliments-cron`, `adapters/github/oidc.ts`),
+  so "Drain job queue" and "Preflight" (after each production deploy, daily) need no repo
+  secrets. Vercel Deployment Protection must cover previews only, never the production domain
+  (Shopify, brand owners and the workflows call it). Production: `https://supliments-pi.vercel.app`.
+- Manual workflows: "Migrate and seed" (fallback, needs secrets), "Verify isolation (live
+  Supabase)". All workflows report problems as annotations naming the cause.
 
 ### Auth, monitoring, legal
 

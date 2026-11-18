@@ -11,7 +11,7 @@
 [![Drizzle](https://img.shields.io/badge/Drizzle_ORM-1a1a1a?style=for-the-badge&logo=drizzle&logoColor=C5F74F)](https://orm.drizzle.team)
 [![Shopify](https://img.shields.io/badge/Shopify_API-1a2e1a?style=for-the-badge&logo=shopify&logoColor=95BF47)](https://shopify.dev)
 [![Vitest](https://img.shields.io/badge/Vitest-1a1a1a?style=for-the-badge&logo=vitest&logoColor=FCC72B)](https://vitest.dev)
-[![Live Demo](https://img.shields.io/badge/Live_Demo-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://supliments-lemon.vercel.app)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://supliments-pi.vercel.app)
 
 </div>
 

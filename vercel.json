@@ -1,1 +1,4 @@
-{ "crons": [{ "path": "/api/cron/jobs", "schedule": "0 3 * * *" }] }
+{
+  "buildCommand": "npm run build:vercel",
+  "crons": [{ "path": "/api/cron/jobs", "schedule": "0 3 * * *" }]
+}
