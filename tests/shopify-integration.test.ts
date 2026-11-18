@@ -484,7 +484,7 @@ describe("publish", () => {
       .where(eq(brandProducts.id, brandProduct.id));
     expect(bp!.status).toBe("published");
 
-    const productCalls = () => fake.requests.filter((r) => r.path.includes("/products")).length;
+    const productCalls = () => fake.graphqlOps.filter((o) => o === "productSet").length;
     const before = productCalls();
     expect((await publish(brandProduct.id)).status).toBe(202);
     await drainIntegrationJobs();
@@ -497,9 +497,7 @@ describe("publish", () => {
       .where(eq(brandProductVariants.id, variants[0]!.id));
     await publish(brandProduct.id);
     await drainIntegrationJobs();
-    expect(
-      fake.requests.filter((r) => r.method === "PUT" && r.path.includes("/products/")),
-    ).toHaveLength(1);
+    expect(productCalls()).toBe(before + 1);
     expect(fake.shop(shop).products.size).toBe(1);
     const prices = [...fake.shop(shop).products.values()][0]!.variants.map((v) => v.price).sort();
     expect(prices).toEqual(["29.99", "34.99"]);

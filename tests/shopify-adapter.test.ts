@@ -236,6 +236,7 @@ describe("product publish", () => {
   it("creates, then updates in place keeping variant ids", async () => {
     const first = await shopify.pushProduct(conn, input);
     const stored = fake.shop(SHOP).products.get(Number(first.externalProductId))!;
+    expect((stored as unknown as { onlineStore?: boolean }).onlineStore).toBe(true);
     expect(stored.variants.map((v) => v.price)).toEqual(["29.99", "49.99"]);
     expect(stored.images).toHaveLength(1);
 
@@ -250,6 +251,24 @@ describe("product publish", () => {
     });
     expect(second).toEqual(first);
     expect(fake.shop(SHOP).products.size).toBe(1);
+  });
+
+  it("uploads images through staged targets (no token sent there) before productSet", async () => {
+    const before = fake.graphqlOps.length;
+    await shopify.pushProduct(conn, input);
+    expect(fake.graphqlOps.slice(before)).toEqual([
+      "stagedUploadsCreate",
+      "productSet",
+      "publications",
+      "publishablePublish",
+    ]);
+    expect([...fake.staged.values()]).toContain(3);
+  });
+
+  it("surfaces Shopify userErrors instead of recording a half-published product", async () => {
+    await expect(shopify.pushProduct(conn, { ...input, title: " " })).rejects.toThrow(
+      /productSet: Title can't be blank/,
+    );
   });
 
   it("recreates a product deleted in the store", async () => {

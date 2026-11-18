@@ -88,13 +88,9 @@ Ordered by risk to a paying customer, not by size.
    brand owner downloads from an email link; redactions scrub customer data, deferring orders
    still in transit. Remaining gap: dispatch CSV files already handed to the manufacturer keep
    addresses (they are the manufacturer's copy; lifecycle rules for our stored copies are D9).
-2. **Product publish via GraphQL.** REST product endpoints are legacy, and new public (App Store)
-   apps must use GraphQL; custom/unlisted apps still work on REST, so this does not block the
-   first order. Deliberately not done blind: images need Shopify's staged-upload flow
-   (`stagedUploadsCreate` → upload to the issued target → `productSet` with `files`), which the
-   adapter's own-shop-only HTTP guard must allow for exactly that target host. Do it with a dev
-   store attached so the fake can be checked against real responses. The change stays inside
-   `src/adapters/shopify` (`pushProduct`); `CommerceProvider` does not change.
+2. ~~**Product publish via GraphQL**~~ **Done**: staged image uploads → `productSet` → Online
+   Store publication. Built from Shopify's 2026 Admin API reference and tested against the fake;
+   the first real publish (Phase C step 2) is its live check.
 3. ~~**Retry the webhook subscription after connect**~~ **Done** (`phase-d`): failures are
    recorded on the integration, retried with backoff, and shown on `/settings/stores` with a
    "Retry webhooks" button.

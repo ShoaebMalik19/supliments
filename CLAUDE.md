@@ -146,6 +146,10 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
 - Webhooks: HMAC over raw body → persist + enqueue → 200. The HMAC does not cover the shop header,
   so order webhooks are notifications only: the job re-fetches the order from the integration's
   own shop (`fetchOrder`) and ignores it if absent. Reconciler polls every 15 min with overlap.
+- Product publish is GraphQL: images via `stagedUploadsCreate` (upload host allowlisted, no token
+  sent there) → `productSet` (synchronous; GIDs stored as their numeric tail, the ids order
+  payloads carry; a product deleted in the store is recreated) → new products published to the
+  Online Store (best-effort, logged). userErrors fail the job with Shopify's messages.
 - Store pushes go through `pushShipmentToStore`/jobs; 401 → `needs_reauth`, pushes halt.
 - Privacy (Shopify compliance webhooks, configured in the Partners app, never via the API):
   `customers/data_request` → JSON export as an org asset + owner email + review item due in 30
