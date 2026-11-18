@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { signUp } from "@/modules/auth";
 
@@ -31,6 +32,10 @@ export default async function SignupPage({
         <label>
           Password <input name="password" type="password" required minLength={10} />
         </label>
+        <p>
+          By signing up you agree to the <Link href="/terms">Terms of Service</Link> and the{" "}
+          <Link href="/privacy">Privacy Policy</Link>.
+        </p>
         <button type="submit">Sign up</button>
       </form>
     </main>

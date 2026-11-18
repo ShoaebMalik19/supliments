@@ -4,7 +4,7 @@ const config: NextConfig = {
   poweredByHeader: false,
   serverExternalPackages: ["postgres", "sharp"],
   outputFileTracingIncludes: {
-    "/**": ["./assets/fonts/**", "./db/seed/label-templates/**"],
+    "/**": ["./assets/fonts/**", "./db/seed/label-templates/**", "./content/legal/**"],
   },
 };
 

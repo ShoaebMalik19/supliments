@@ -1,4 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { LEGAL_DOCS, type LegalDoc } from "@/lib/legal";
 import { sql } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
 import { withTenant } from "@/db/tenant";
@@ -238,5 +241,29 @@ export async function preflight(
     }),
   );
 
+  checks.push(
+    await run("legal.pages", async () => {
+      const missing = (Object.keys(LEGAL_DOCS) as LegalDoc[]).filter(
+        (d) => !existsSync(join(process.cwd(), "content/legal", `${d}.md`)),
+      );
+      return missing.length
+        ? [
+            "warn",
+            `counsel text missing in content/legal: ${missing.map((d) => `${d}.md`).join(", ")}`,
+          ]
+        : ["ok", "terms and privacy present"];
+    }),
+  );
+
   return { ok: checks.every((c) => c.status !== "fail"), checks };
+}
+
+/** Public liveness for uptime monitors: answers only whether the database responds. */
+export async function liveness(timeoutMs = 3000): Promise<{ ok: boolean }> {
+  const probe = privilegedDb()
+    .execute(sql`select 1`)
+    .then(() => true)
+    .catch(() => false);
+  const timeout = new Promise<boolean>((r) => setTimeout(() => r(false), timeoutMs).unref?.());
+  return { ok: await Promise.race([probe, timeout]) };
 }
