@@ -265,3 +265,27 @@ export async function setBrandProductLabelState(
 }
 export * from "./order-lines";
 export { markBrandProductPublished, publishableProduct } from "./publish";
+
+const renameInput = z.object({ name: z.string().trim().min(1).max(100) });
+
+export async function renameBrand(ctx: TenantContext, t: TenantDb, id: string, raw: unknown) {
+  const before = await t.find(brands, id);
+  if (!before) return null;
+  const body = renameInput.safeParse(raw);
+  if (!body.success) throw badRequest("name must be 1-100 characters");
+  const after = await t.update(brands, id, { name: body.data.name });
+  await recordAudit(
+    {
+      orgId: ctx.orgId,
+      actorUserId: ctx.userId,
+      actorType: "user",
+      action: "brand.updated",
+      entityType: "brand",
+      entityId: id,
+      before: { name: before.name },
+      after: { name: after?.name },
+    },
+    t.tx,
+  );
+  return after;
+}

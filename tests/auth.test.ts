@@ -11,7 +11,7 @@ import {
   signIn,
   signUp,
 } from "@/modules/auth";
-import { resolveTenant, provisionOrganization, can } from "@/modules/tenancy";
+import { resolveTenant, provisionOrganization, can, renameOrganization } from "@/modules/tenancy";
 import { FakeSession } from "./fake-session";
 import { createTenant } from "./helpers";
 
@@ -147,5 +147,31 @@ describe("social sign-in (Google)", () => {
       .from(memberships)
       .where(eq(memberships.userId, t.owner.id));
     expect(rows).toHaveLength(1);
+  });
+});
+
+describe("renaming the organization", () => {
+  it("changes only the caller's org, through the tenant role, audited; bad names are refused", async () => {
+    const A = await createTenant("Rename A");
+    const B = await createTenant("Rename B");
+    const ctx = {
+      userId: A.owner.id,
+      email: A.owner.email,
+      orgId: A.org.id,
+      role: "owner" as const,
+    };
+    const { withTenant } = await import("@/db/tenant");
+    expect(await withTenant(A.org.id, (t) => renameOrganization(ctx, t, "x"))).toBeNull();
+    expect(await withTenant(A.org.id, (t) => renameOrganization(ctx, t, "  New Name  "))).toBe(
+      "New Name",
+    );
+    const names = await privilegedDb().select().from(organizations);
+    expect(names.find((o) => o.id === A.org.id)!.name).toBe("New Name");
+    expect(names.find((o) => o.id === B.org.id)!.name).toBe(B.org.name);
+    const [audit] = await privilegedDb()
+      .select()
+      .from(auditLogs)
+      .where(and(eq(auditLogs.orgId, A.org.id), eq(auditLogs.action, "org.renamed")));
+    expect(audit!.after).toEqual({ name: "New Name" });
   });
 });

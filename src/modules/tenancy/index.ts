@@ -161,3 +161,24 @@ export async function userEmail(userId: string) {
     .where(eq(users.id, userId));
   return u?.email ?? null;
 }
+
+export async function renameOrganization(ctx: TenantContext, t: TenantDb, rawName: unknown) {
+  const name = typeof rawName === "string" ? rawName.trim() : "";
+  if (name.length < 2 || name.length > 100) return null;
+  const [before] = await t.tx.select().from(organizations).where(eq(organizations.id, t.orgId));
+  await t.tx.update(organizations).set({ name }).where(eq(organizations.id, t.orgId));
+  await recordAudit(
+    {
+      orgId: t.orgId,
+      actorUserId: ctx.userId,
+      actorType: "user",
+      action: "org.renamed",
+      entityType: "organization",
+      entityId: t.orgId,
+      before: { name: before?.name },
+      after: { name },
+    },
+    t.tx,
+  );
+  return name;
+}
