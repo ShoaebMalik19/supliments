@@ -1,8 +1,9 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or } from "drizzle-orm";
 import { z } from "zod";
 import { privilegedDb } from "@/db/privileged";
 import { withTenant } from "@/db/tenant";
-import { orders, reviewQueueItems } from "@/db/schema";
+import { orders, organizations, reviewQueueItems } from "@/db/schema";
+import { orderStatus } from "@/db/schema/enums";
 import { recordAudit } from "@/modules/audit";
 import { getOrder, recordOrderPayment, resolveOrder } from "@/modules/orders";
 import { badRequest } from "@/lib/http";
@@ -87,4 +88,51 @@ export async function adminResolveOrder(admin: AdminContext, orderId: string) {
     );
   });
   return { status };
+}
+
+const searchInput = z.object({
+  q: z.string().trim().max(100).optional(),
+  status: z.enum(orderStatus.enumValues).optional(),
+});
+
+/** Cross-tenant order search for operators (by order number or id, org name, status). Audited. */
+export async function adminSearchOrders(admin: AdminContext, raw: unknown, limit = 100) {
+  const input = searchInput.parse(raw);
+  const q = input.q || null;
+  const conds = [
+    input.status ? eq(orders.status, input.status) : undefined,
+    q
+      ? or(
+          ilike(orders.externalOrderNumber, `%${q.replace(/[%_\\]/g, "\\$&")}%`),
+          ilike(organizations.name, `%${q.replace(/[%_\\]/g, "\\$&")}%`),
+          z.uuid().safeParse(q).success ? eq(orders.id, q) : undefined,
+        )
+      : undefined,
+  ];
+  const rows = await privilegedDb()
+    .select({
+      id: orders.id,
+      number: orders.externalOrderNumber,
+      status: orders.status,
+      orgId: orders.orgId,
+      orgName: organizations.name,
+      retailTotalMinor: orders.retailTotalMinor,
+      currency: orders.currency,
+      placedAt: orders.placedAt,
+      updatedAt: orders.updatedAt,
+    })
+    .from(orders)
+    .innerJoin(organizations, eq(organizations.id, orders.orgId))
+    .where(and(...conds))
+    .orderBy(desc(orders.createdAt))
+    .limit(limit);
+  await recordAudit({
+    orgId: null,
+    actorUserId: admin.userId,
+    actorType: "admin",
+    action: "admin.orders_searched",
+    entityType: "order",
+    after: { q, status: input.status ?? null, results: rows.length },
+  });
+  return rows;
 }

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
 import {
+  outboxEvents,
   dispatchBatches,
   fulfillmentOrders,
   jobQueue,
@@ -24,6 +25,7 @@ import {
   scanStuckOrders,
   submitPaidOrder,
 } from "@/modules/fulfillment";
+import { templateFor } from "@/modules/notifications";
 import { fakeStorage } from "./fake-storage";
 import { exportedBatch, seedCenter, submittedOrder } from "./fulfillment-fixtures";
 import { ingestStandardOrder, orderReadyTenant } from "./order-fixtures";
@@ -300,5 +302,16 @@ describe("stuck-order monitor", () => {
     const items = await openItems(res.orderId);
     expect(items).toHaveLength(1);
     expect(items[0]!.type).toBe("payment_hold");
+    const overdue = await db()
+      .select()
+      .from(outboxEvents)
+      .where(
+        and(
+          eq(outboxEvents.aggregateId, res.orderId),
+          eq(outboxEvents.eventType, "order.payment_overdue"),
+        ),
+      );
+    expect(overdue).toHaveLength(1);
+    expect(templateFor(overdue[0]!)).toBe("order_payment_overdue");
   });
 });

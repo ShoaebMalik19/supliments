@@ -6,11 +6,12 @@ import {
   charges,
   feeSchedules,
   ledgerEntries,
+  orders,
   platformAdmins,
   reviewQueueItems,
 } from "@/db/schema";
 import { setSessionSourceForTests } from "@/modules/auth";
-import { createFeeSchedule } from "@/modules/admin";
+import { adminSearchOrders, createFeeSchedule } from "@/modules/admin";
 import { ingestExternalOrder } from "@/modules/orders";
 import * as feeSchedulesRoute from "@/app/api/admin/fee-schedules/route";
 import * as adminOrderRoute from "@/app/api/admin/orders/[id]/route";
@@ -20,6 +21,7 @@ import { FakeSession } from "./fake-session";
 import { createUser, TEST_FEE_RULES } from "./helpers";
 import {
   externalOrder,
+  ingestStandardOrder,
   line,
   orderReadyTenant,
   seedPricedOrder,
@@ -241,5 +243,22 @@ describe("admin orders", () => {
       .from(auditLogs)
       .where(and(eq(auditLogs.entityId, id), eq(auditLogs.action, "admin.order_viewed")));
     expect(audits).toHaveLength(1);
+  });
+});
+
+describe("admin order search", () => {
+  it("finds orders across orgs by number, org name and status; wildcards are literal", async () => {
+    const t = await orderReadyTenant();
+    const { res } = await ingestStandardOrder(t);
+    if (res.outcome !== "created") throw new Error("not created");
+    const admin = { userId: (await createUser()).id };
+    const [o] = await privilegedDb().select().from(orders).where(eq(orders.id, res.orderId));
+    const byNumber = await adminSearchOrders(admin, { q: o!.externalOrderNumber! });
+    expect(byNumber.map((r) => r.id)).toContain(res.orderId);
+    const byOrg = await adminSearchOrders(admin, { q: t.org.name, status: o!.status });
+    expect(byOrg.map((r) => r.id)).toContain(res.orderId);
+    expect(byOrg.every((r) => r.status === o!.status)).toBe(true);
+    expect(await adminSearchOrders(admin, { q: "%%%_" })).toHaveLength(0);
+    await expect(adminSearchOrders(admin, { status: "bogus" })).rejects.toThrow();
   });
 });

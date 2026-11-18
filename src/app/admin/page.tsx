@@ -19,8 +19,9 @@ export default async function AdminPage() {
     <main>
       <h1>Admin — organizations</h1>
       <p>
-        <a href="/admin/catalog">Catalog</a> · <a href="/admin/labels">Label reviews</a> ·{" "}
-        <a href="/admin/review">Review queue</a> · <a href="/admin/dispatch">Dispatch</a>
+        <a href="/admin/orders">Orders</a> · <a href="/admin/catalog">Catalog</a> ·{" "}
+        <a href="/admin/labels">Label reviews</a> · <a href="/admin/review">Review queue</a> ·{" "}
+        <a href="/admin/dispatch">Dispatch</a>
       </p>
       <table>
         <tbody>

@@ -13,6 +13,7 @@ import {
   orderEvents,
   orderItems,
   orders,
+  outboxEvents,
   partnerSkuMappings,
   reviewQueueItems,
   shipments,
@@ -72,7 +73,12 @@ export async function flagForReview(
     priority?: number;
   },
 ) {
-  await tx.insert(reviewQueueItems).values(input).onConflictDoNothing();
+  const opened = await tx
+    .insert(reviewQueueItems)
+    .values(input)
+    .onConflictDoNothing()
+    .returning({ id: reviewQueueItems.id });
+  return opened.length > 0;
 }
 
 /**
@@ -350,18 +356,31 @@ export async function scanStuckOrders(now = new Date()) {
     };
     const flag = async (
       key: keyof typeof counts,
-      rows: { id: string; orgId: string }[],
+      rows: { id: string; orgId: string; number?: string | null }[],
       type: "failed_fulfillment" | "payment_hold",
       entityType: string,
     ) => {
       for (const r of rows) {
-        await flagForReview(tx, { orgId: r.orgId, type, entityType, entityId: r.id });
+        const opened = await flagForReview(tx, {
+          orgId: r.orgId,
+          type,
+          entityType,
+          entityId: r.id,
+        });
         counts[key]++;
+        if (opened && type === "payment_hold")
+          await tx.insert(outboxEvents).values({
+            orgId: r.orgId,
+            aggregateType: "order",
+            aggregateId: r.id,
+            eventType: "order.payment_overdue",
+            payload: { orderId: r.id, orderNumber: r.number ?? null },
+          });
       }
     };
     const stuckOrders = (status: "awaiting_payment" | "needs_review" | "on_hold", hours: number) =>
       tx
-        .select({ id: orders.id, orgId: orders.orgId })
+        .select({ id: orders.id, orgId: orders.orgId, number: orders.externalOrderNumber })
         .from(orders)
         .where(and(eq(orders.status, status), lt(orders.updatedAt, hoursAgo(now, hours))));
     await flag(
