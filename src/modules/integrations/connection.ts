@@ -21,6 +21,8 @@ export const integrationView = (i: Integration) => ({
   installedAt: i.installedAt,
   lastSyncAt: i.lastSyncAt,
   ordersSyncedThrough: i.ordersSyncedThrough,
+  webhooksSubscribedAt: i.webhooksSubscribedAt,
+  webhooksError: i.webhooksError,
 });
 
 /** The integration cannot be used right now: missing in this org, disconnected, or needs re-auth. */

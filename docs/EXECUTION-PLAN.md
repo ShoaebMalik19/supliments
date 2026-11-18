@@ -71,7 +71,7 @@ order rows and audit log at each step through the read-only Supabase connection.
 
 | # | Action (where) | Expected result | If not |
 |---|---|---|---|
-| 1 | Sign in as `demo-owner` → `/settings/stores` → connect `<store>.myshopify.com` | Status "Connected" | Audit row `integration.connected` with `webhooks: "failed"` → protected data access (B9) |
+| 1 | Sign in as `demo-owner` → `/settings/stores` → connect `<store>.myshopify.com` | Status "Connected", order webhooks "Active" | Order webhooks "Not subscribed (… HTTP 403)" → protected data access (B9), then "Retry webhooks" |
 | 2 | `/brand-products/<id>` → publish to the store | Product appears in Shopify admin with 2 mockup images | Preflight `storage.*`, then the job's `last_error` |
 | 3 | Shopify admin → Orders → **Create order** with the published product and a real-looking address → **Collect payment → Mark as paid**. Do **not** check out with Bogus Gateway or test-mode payments: Shopify flags those `test: true`, and ingest ignores test orders by design (§9.5) | Within seconds `/orders` shows it `awaiting_payment`; owner gets "Order received" | `webhook_events` row with status `ignored` + reason `test_order` = wrong order type; no row = webhooks not subscribed (B9). The reconciler also picks orders up within 15 min |
 | 4 | Sign in as `demo-admin` → `/admin/orders/<id>` → mark paid | Order → `submitted` | `job_queue` row `fulfillment.order_paid` |
@@ -92,8 +92,9 @@ Ordered by risk to a paying customer, not by size.
    addresses (they are the manufacturer's copy; lifecycle rules for our stored copies are D9).
 2. **Product publish via GraphQL.** REST product endpoints are legacy, and newer public apps must
    use GraphQL. The adapter boundary makes this a contained change behind `CommerceProvider`.
-3. **Retry the webhook subscription after connect** instead of only auditing the failure, and
-   show it on `/settings/stores`.
+3. ~~**Retry the webhook subscription after connect**~~ **Done** (`phase-d`): failures are
+   recorded on the integration, retried with backoff, and shown on `/settings/stores` with a
+   "Retry webhooks" button.
 4. **Dead-letter visibility:** `dead` jobs and `failed` notifications appear in `/admin/review`
    (today only preflight reports them).
 5. **Vector PDF/X output** with an OutputIntent, replacing the 300 dpi raster, before the first

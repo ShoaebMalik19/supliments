@@ -3,6 +3,7 @@ import { registerJob } from "@/modules/jobs";
 import { JOB_PROCESS_WEBHOOK, JOB_PUBLISH_PRODUCT, JOB_RECONCILE } from "./privileged";
 import { runPublishJob } from "./publish";
 import { JOB_PRIVACY_RETRY } from "./privacy";
+import { JOB_SUBSCRIBE_WEBHOOKS, runSubscribeWebhooksJob } from "./webhooks";
 import { runPrivacyRetryJob, runReconcileJob, runWebhookJob } from "./sync";
 
 const requireOrg = (orgId: string | null) => {
@@ -28,6 +29,12 @@ export function registerIntegrationJobs() {
     await runPrivacyRetryJob(
       requireOrg(job.orgId),
       z.object({ webhookEventId: z.uuid() }).parse(payload),
+    );
+  });
+  registerJob(JOB_SUBSCRIBE_WEBHOOKS, async (payload, job) => {
+    await runSubscribeWebhooksJob(
+      requireOrg(job.orgId),
+      z.object({ integrationId: z.uuid(), address: z.url() }).parse(payload),
     );
   });
   registerJob(JOB_PUBLISH_PRODUCT, async (payload, job) => {

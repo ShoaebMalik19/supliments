@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
+import { withTenant } from "@/db/tenant";
 import {
   auditLogs,
   brandProducts,
@@ -19,7 +20,10 @@ import { setSessionSourceForTests } from "@/modules/auth";
 import { setStorageProviderForTests } from "@/modules/assets";
 import { ingestExternalOrder } from "@/modules/orders";
 import {
+  disconnectIntegration,
   IntegrationUnavailableError,
+  JOB_SUBSCRIBE_WEBHOOKS,
+  retryWebhookSubscription,
   pushShipmentToStore,
   registerIntegrationJobs,
   scheduleReconciliation,
@@ -150,6 +154,93 @@ describe("OAuth connect", () => {
     expect(audits.map((a) => a.action)).toContain("integration.connected");
     expect(JSON.stringify(audits)).not.toContain(token);
     expect(await res.text()).not.toContain(token);
+  });
+});
+
+describe("webhook subscription after connect", () => {
+  let A: Tenant;
+  beforeEach(async () => {
+    A = await createTenant("Hooks A");
+  });
+
+  it("a refused subscription is recorded, retried by a job, and cleared once it succeeds", async () => {
+    const shop = uniqueShop();
+    fake.createShop(shop).refuseWebhooks = 403;
+    const { res, integration } = await connectShopify(fake, session, A, shop);
+    expect(res.status).toBe(303);
+    expect(integration).toMatchObject({ status: "connected", webhooksSubscribedAt: null });
+    expect(integration!.webhooksError).toMatch(/HTTP 403/);
+    expect(integration!.webhooksError).not.toContain(fake.shop(shop).accessToken!);
+    const jobs = await jobsFor(JOB_SUBSCRIBE_WEBHOOKS, A.org.id);
+    expect(jobs).toHaveLength(1);
+    const [audit] = await db()
+      .select()
+      .from(auditLogs)
+      .where(and(eq(auditLogs.orgId, A.org.id), eq(auditLogs.action, "integration.connected")));
+    expect(audit!.after).toMatchObject({ webhooks: "failed" });
+
+    fake.shop(shop).refuseWebhooks = undefined;
+    await drainIntegrationJobs();
+    const after = await integrationRow(integration!.id);
+    expect(after.webhooksSubscribedAt).not.toBeNull();
+    expect(after.webhooksError).toBeNull();
+    expect(fake.shop(shop).webhooks).toHaveLength(5);
+  });
+
+  it("the retry action re-enqueues for the caller's own store and 404s for another org's", async () => {
+    const B = await createTenant("Hooks B");
+    const shop = uniqueShop();
+    fake.createShop(shop).refuseWebhooks = 500;
+    const { integration } = await connectShopify(fake, session, A, shop);
+    const ctxA = {
+      userId: A.owner.id,
+      email: A.owner.email,
+      orgId: A.org.id,
+      role: "owner" as const,
+    };
+    const ctxB = {
+      userId: B.owner.id,
+      email: B.owner.email,
+      orgId: B.org.id,
+      role: "owner" as const,
+    };
+    await expect(
+      withTenant(B.org.id, (t) =>
+        retryWebhookSubscription(ctxB, t, integration!.id, "https://app.test"),
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    await withTenant(A.org.id, (t) =>
+      retryWebhookSubscription(ctxA, t, integration!.id, "https://app.test"),
+    );
+    expect(await jobsFor(JOB_SUBSCRIBE_WEBHOOKS, A.org.id)).toHaveLength(2);
+    expect(await jobsFor(JOB_SUBSCRIBE_WEBHOOKS, B.org.id)).toHaveLength(0);
+  });
+
+  it("a store that lost its token stops retrying instead of dying in the queue", async () => {
+    const shop = uniqueShop();
+    fake.createShop(shop).refuseWebhooks = 403;
+    const { integration } = await connectShopify(fake, session, A, shop);
+    fake.shop(shop).accessToken = "revoked";
+    await drainIntegrationJobs();
+    const [job] = await jobsFor(JOB_SUBSCRIBE_WEBHOOKS, A.org.id);
+    expect(job!.status).toBe("succeeded");
+    const after = await integrationRow(integration!.id);
+    expect(after.status).toBe("needs_reauth");
+    expect(after.webhooksError).toMatch(/needs_reauth/);
+  });
+
+  it("disconnect clears the webhook status", async () => {
+    const shop = uniqueShop();
+    const { integration } = await connectShopify(fake, session, A, shop);
+    expect(integration!.webhooksSubscribedAt).not.toBeNull();
+    const ctxA = {
+      userId: A.owner.id,
+      email: A.owner.email,
+      orgId: A.org.id,
+      role: "owner" as const,
+    };
+    await withTenant(A.org.id, (t) => disconnectIntegration(ctxA, t, integration!.id));
+    expect((await integrationRow(integration!.id)).webhooksSubscribedAt).toBeNull();
   });
 });
 

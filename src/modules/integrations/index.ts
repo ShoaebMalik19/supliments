@@ -11,3 +11,4 @@ export {
 export { publishHash, requestPublish, runPublishJob } from "./publish";
 export { pushShipmentToStore, receiveShopifyWebhook, runReconcileJob, runWebhookJob } from "./sync";
 export { disconnectIntegration, listIntegrations } from "./manage";
+export { JOB_SUBSCRIBE_WEBHOOKS, retryWebhookSubscription } from "./webhooks";

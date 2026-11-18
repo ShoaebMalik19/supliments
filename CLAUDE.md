@@ -185,7 +185,9 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
 
 - `/settings/stores` (tenant, owner/admin act): connect / reconnect (same OAuth install flow;
   same shop reattaches) / disconnect (drops token, keeps history; app stays installed in Shopify,
-  its webhooks are ignored). `/admin/review`: every open review item with a link to act on;
+  its webhooks are ignored). Webhook subscription state is per integration
+  (`webhooks_subscribed_at` / `webhooks_error`): a failure at connect is retried by job
+  `integrations.subscribe_webhooks` and shown on the page with a "Retry webhooks" action. `/admin/review`: every open review item with a link to act on;
   resolve = done | dismissed with an audited note (`admin.resolveReviewItem`).
 
 ### Seed + E2E (M6)
