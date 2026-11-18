@@ -10,9 +10,9 @@ worked. Each step has a check that names its own failure, so nothing has to be d
 
 | Area | State |
 |---|---|
-| Code | Order loop, labels, Shopify, pricing/ledger, fulfillment, operator pages, email: done |
-| CI on `main` | **Red** since `6c02e0a`: the README rewrite fails the format check. Fixed on `go-live` |
-| Supabase `jjqxncbwfulwzraarvln` | 10 of 11 migrations applied (`0010` is on `go-live`); private bucket exists; **not seeded** (0 users) |
+| Code | MVP scope (§16 must-haves) built: order loop, labels (vector print PDF), Shopify incl. privacy webhooks, pricing/ledger, fulfillment incl. manual shipment entry, operator pages, email, Google sign-in, health endpoint, legal page shells |
+| CI on `main` | Green (go-live and Phase D merged) |
+| Supabase `jjqxncbwfulwzraarvln` | Migrations up to `0009` applied; `0010`–`0012` are applied by step A4; private bucket exists; **not seeded** (0 users) |
 | Isolation | Live catalog audit + 125 live probes as `anon`: 0 leaks. Signed-in probes need a seeded user |
 | Vercel | Deployed (URL known only to the owner). Not visible to this session's Vercel account |
 | Job queue | **Never drained**: `APP_URL` / `CRON_SECRET` repository secrets are missing (every scheduled run fails and says so) |
@@ -23,9 +23,7 @@ worked. Each step has a check that names its own failure, so nothing has to be d
 
 Do these in order. Each one ends with a check.
 
-1. **Merge the `go-live` PR into `main`.** It turns CI green (README formatting) and carries
-   migration `0010`, the queue fixes, preflight, the seed workflow and email.
-   *Check:* the CI run on `main` passes.
+1. ~~Merge the `go-live` PR~~ Done (PRs #6 and #7 merged; this one follows).
 2. **Add repository secrets** (GitHub → Settings → Secrets and variables → Actions):
    - `APP_URL`: the deployed origin, e.g. `https://<project>.vercel.app`
    - `CRON_SECRET`: exactly the value set in Vercel
