@@ -105,7 +105,8 @@ Ordered by risk to a paying customer, not by size.
 5. ~~**Vector PDF output**~~ **Done**: print PDFs are vector (text as outlines) with an sRGB
    OutputIntent. Ask the manufacturer to preflight one file; if they require CMYK PDF/X-1a, that
    conversion is their prepress step or a follow-up here.
-6. **Virus scanning** for uploads (currently a stub that never blocks).
+6. **Virus scanning** for uploads. Partly done: uploads must pass a content policy (images decode
+   fully; PDFs with active content are rejected). A malware-scanning vendor is an owner decision.
 7. **Real bottle photography** for mockups: data only (`mockup_spec.backgroundAssetId`).
 8. **Live payments** (§10), unblocked when a §18 default is decided; `PaymentProvider` already
    has the seam.

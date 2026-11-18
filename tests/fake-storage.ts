@@ -55,3 +55,11 @@ export class FakeStorage implements StorageProvider {
 }
 
 export const fakeStorage = new FakeStorage();
+
+/** A complete, decodable 2×2 PNG (upload completion decodes images). */
+export const REAL_PNG = Uint8Array.from(
+  Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWMQMgkTMgljgFAAEA4CcV2GZ44AAAAASUVORK5CYII=",
+    "base64",
+  ),
+);

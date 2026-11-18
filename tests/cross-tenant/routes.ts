@@ -18,7 +18,7 @@ import {
   seedCatalogProduct as seedCatalog,
   type createTenant,
 } from "../helpers";
-import { bytesOf, PNG_HEADER } from "../fake-storage";
+import { REAL_PNG } from "../fake-storage";
 import * as brandRoute from "@/app/api/brands/[id]/route";
 import * as memberRoute from "@/app/api/members/[id]/route";
 import * as catalogListRoute from "@/app/api/catalog/products/route";
@@ -115,7 +115,7 @@ export const tenantRoutes: TenantRouteCase[] = [
     url: (id) => `http://test/api/assets/${id}/complete`,
     // A valid pending upload: if tenant A could complete it, the row would flip to `ready`.
     seed: async (b) =>
-      (await createAsset(b.org.id, { bytes: 64, content: bytesOf(PNG_HEADER, 64) })).id,
+      (await createAsset(b.org.id, { bytes: REAL_PNG.length, content: REAL_PNG })).id,
     snapshot: assetSnapshot,
     read: [],
     mutate: [{ method: "POST", handler: assetCompleteRoute.POST }],

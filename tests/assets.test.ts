@@ -9,7 +9,7 @@ import * as uploadsRoute from "@/app/api/assets/uploads/route";
 import * as completeRoute from "@/app/api/assets/[id]/complete/route";
 import * as urlRoute from "@/app/api/assets/[id]/url/route";
 import { FakeSession } from "./fake-session";
-import { bytesOf, fakeStorage, PNG_HEADER } from "./fake-storage";
+import { bytesOf, fakeStorage, PNG_HEADER, REAL_PNG } from "./fake-storage";
 import { createAsset, createTenant, createUser, pgError } from "./helpers";
 import { callRoute, type Handler } from "./cross-tenant/routes";
 
@@ -78,7 +78,7 @@ describe("upload lifecycle", () => {
       asset,
       upload: signed,
       row: r,
-    } = await upload({ kind: "logo", mime: "image/png", bytes: 128 }, bytesOf(PNG_HEADER, 128));
+    } = await upload({ kind: "logo", mime: "image/png", bytes: REAL_PNG.length }, REAL_PNG);
     expect(r).toMatchObject({ uploadStatus: "pending", orgId: T.org.id, isPublic: false });
     expect(r.storageKey).toMatch(new RegExp(`^org/${T.org.id}/${asset.id}/[0-9a-f]{32}$`));
     expect(signed.url).toContain(r.storageKey);
@@ -101,8 +101,8 @@ describe("upload lifecycle", () => {
 
   it("completing twice is idempotent", async () => {
     const { asset } = await upload(
-      { kind: "logo", mime: "image/png", bytes: 32 },
-      bytesOf(PNG_HEADER, 32),
+      { kind: "logo", mime: "image/png", bytes: REAL_PNG.length },
+      REAL_PNG,
     );
     expect((await complete(asset.id)).status).toBe(200);
     expect((await complete(asset.id)).status).toBe(200);
@@ -144,6 +144,41 @@ describe("upload lifecycle", () => {
     const res = await complete(asset.id);
     expect(await res.json()).toMatchObject({ error: "size_mismatch" });
     expect(fakeStorage.has(r.bucket, r.storageKey)).toBe(false);
+  });
+
+  it.each([
+    ["an image that does not decode", "image/png", bytesOf(PNG_HEADER, 64), "image_undecodable"],
+    [
+      "a PDF with JavaScript",
+      "application/pdf",
+      Buffer.from(
+        "%PDF-1.7\n1 0 obj << /OpenAction << /S /JavaScript /JS (app.alert(1)) >> >> endobj\n%%EOF",
+        "latin1",
+      ),
+      "pdf_active_content",
+    ],
+    [
+      "a truncated PDF",
+      "application/pdf",
+      Buffer.from("%PDF-1.7\n1 0 obj", "latin1"),
+      "pdf_truncated",
+    ],
+  ] as const)("content policy rejects %s", async (_name, mime, data, reason) => {
+    const bytes = new Uint8Array(data);
+    const { asset, row: r } = await upload({ kind: "logo", mime, bytes: bytes.length }, bytes);
+    expect(await (await complete(asset.id)).json()).toMatchObject({ error: reason });
+    expect(fakeStorage.has(r.bucket, r.storageKey)).toBe(false);
+  });
+
+  it("a plain PDF passes the content policy", async () => {
+    const pdf = new Uint8Array(
+      Buffer.from("%PDF-1.7\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n", "latin1"),
+    );
+    const { asset } = await upload(
+      { kind: "logo", mime: "application/pdf", bytes: pdf.length },
+      pdf,
+    );
+    expect((await complete(asset.id)).status).toBe(200);
   });
 
   it("a rejected upload cannot be revived by re-uploading and completing again", async () => {

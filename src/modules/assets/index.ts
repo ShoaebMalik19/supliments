@@ -8,7 +8,13 @@ import { assetKind } from "@/db/schema/enums";
 import { recordAudit } from "@/modules/audit";
 import type { TenantContext } from "@/modules/tenancy";
 import { badRequest, HttpError, json } from "@/lib/http";
-import { contentMatchesMime, sniffMime, SNIFF_BYTES, type AllowedMime } from "./magic";
+import {
+  contentMatchesMime,
+  contentPolicyViolation,
+  sniffMime,
+  SNIFF_BYTES,
+  type AllowedMime,
+} from "./magic";
 import { storage } from "./storage";
 
 export { setStorageProviderForTests, type StorageProvider, type ObjectHead } from "./storage";
@@ -113,12 +119,18 @@ export async function completeUpload(ctx: TenantContext, t: TenantDb, id: string
   const object = await storage().readHead(asset.bucket, asset.storageKey, SNIFF_BYTES);
   if (!object) throw new HttpError(409, "Upload not received yet");
 
-  const reason =
+  let reason =
     object.size !== asset.bytes
       ? "size_mismatch"
       : !contentMatchesMime(object.head, asset.mime)
         ? "content_mismatch"
         : null;
+  if (!reason) {
+    const data = await storage().getObject(asset.bucket, asset.storageKey);
+    reason = data
+      ? await contentPolicyViolation(asset.mime as AllowedMime, data)
+      : "object_missing";
+  }
 
   if (!reason) return view((await t.update(assets, id, { uploadStatus: "ready" }))!);
 

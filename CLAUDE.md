@@ -108,7 +108,9 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
 - Assets: one private bucket (`ASSETS_BUCKET`), signed URLs only (download TTL 60s). Keys are
   server-generated `org/{orgId}/{assetId}/{random}` (DB check; platform: `platform/...`).
   `upload_status` pending → ready | rejected (terminal); ready only after magic bytes + exact
-  size match. Tenants may UPDATE only upload_status/width/height/checksum. Virus scan: stub.
+  size match, plus a content policy (images must fully decode; PDFs with active content such as
+  JavaScript, launch actions or embedded files are rejected). Tenants may UPDATE only
+  upload_status/width/height/checksum. Malware scanning (`virus_scan_status`) awaits a vendor.
 
 ## Order loop (MVP) — contracts shared across modules
 

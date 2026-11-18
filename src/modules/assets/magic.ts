@@ -26,3 +26,31 @@ export function sniffMime(head: Uint8Array): AllowedMime | null {
 export function contentMatchesMime(head: Uint8Array, declared: string): boolean {
   return sniffMime(head) === declared;
 }
+
+const PDF_ACTIVE =
+  /\/(JavaScript|JS|Launch|EmbeddedFile|RichMedia|OpenAction|AA|SubmitForm|ImportData)\b/;
+
+/**
+ * Content policy beyond magic bytes (no malware vendor yet): images must decode completely,
+ * PDFs must not carry active content. Returns a rejection reason or null.
+ */
+export async function contentPolicyViolation(
+  mime: AllowedMime,
+  data: Uint8Array,
+): Promise<string | null> {
+  if (mime === "application/pdf") {
+    const text = Buffer.from(data).toString("latin1");
+    if (!text.trimEnd().endsWith("%%EOF")) return "pdf_truncated";
+    return PDF_ACTIVE.test(text) ? "pdf_active_content" : null;
+  }
+  try {
+    const { default: sharp } = await import("sharp");
+    await sharp(data, { limitInputPixels: 50_000_000, failOn: "error" })
+      .resize(32, 32, { fit: "inside" })
+      .raw()
+      .toBuffer();
+    return null;
+  } catch {
+    return "image_undecodable";
+  }
+}
