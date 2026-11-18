@@ -15,9 +15,12 @@ export const notifications = pgTable(
     status: notificationStatus("status").notNull().default("pending"),
     sentAt: ts("sent_at"),
     readAt: ts("read_at"),
+    dedupeKey: text("dedupe_key").unique(),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
     ...timestamps,
   },
-  (t) => [index().on(t.orgId, t.userId)],
+  (t) => [index().on(t.orgId, t.userId), index().on(t.status, t.createdAt)],
 );
 
 export const reviewQueueItems = pgTable(

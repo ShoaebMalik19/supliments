@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
 import { withTenant, type TenantDb } from "@/db/tenant";
 import { brands, memberships, organizations, users } from "@/db/schema";
@@ -116,4 +116,22 @@ export async function orgMembers(t: TenantDb) {
     .innerJoin(users, eq(users.id, memberships.userId))
     .where(and(eq(memberships.orgId, t.orgId)))
     .orderBy(asc(memberships.createdAt));
+}
+
+/** People who receive an org's operational email: its owners and admins. */
+export async function orgAdminRecipients(orgId: string) {
+  return privilegedDb()
+    .select({ userId: users.id, email: users.email })
+    .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(and(eq(memberships.orgId, orgId), inArray(memberships.role, ["owner", "admin"])))
+    .orderBy(asc(memberships.createdAt));
+}
+
+export async function userEmail(userId: string) {
+  const [u] = await privilegedDb()
+    .select({ email: users.email })
+    .from(users)
+    .where(eq(users.id, userId));
+  return u?.email ?? null;
 }

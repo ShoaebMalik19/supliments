@@ -21,4 +21,6 @@ export interface SessionSource {
 /** Server-side user administration (seed, ops). Creates confirmed accounts that can sign in. */
 export interface AuthAdmin {
   ensureUser(email: string, password: string): Promise<{ id: string; created: boolean }>;
+  /** Whether the auth service answers with the public key, and whether email signup is on. */
+  health(): Promise<{ reachable: boolean; emailSignup: boolean | null; detail: string }>;
 }

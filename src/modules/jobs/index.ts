@@ -1,4 +1,5 @@
-import { and, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, lte, sql } from "drizzle-orm";
+import { after } from "next/server";
 import { privilegedDb } from "@/db/privileged";
 import { jobQueue } from "@/db/schema";
 import type { TenantDb } from "@/db/tenant";
@@ -14,6 +15,35 @@ export function registerJob(kind: string, handler: JobHandler) {
   handlers.set(kind, handler);
 }
 
+/**
+ * Longer than any function's lifetime: a job still `running` after this had its worker killed
+ * (timeout, deploy, crash). Handlers must be idempotent, because a reclaimed job runs again.
+ */
+export const STALE_LOCK_SECONDS = 10 * 60;
+export const KICK_BUDGET_MS = 8_000;
+
+let lastKickAt = 0;
+
+/**
+ * Drains the queue right after the current response is sent, so work does not wait for the
+ * scheduler (scheduled runs can be hours late). Outside a request (jobs, scripts, tests) it is a
+ * no-op: the scheduled drain remains the backstop and the only driver of retries.
+ */
+export function kickQueue() {
+  if (Date.now() - lastKickAt < 1_000) return;
+  try {
+    after(async () => {
+      const { drainQueue } = await import("@/queue");
+      await drainQueue({ budgetMs: KICK_BUDGET_MS }).catch((e) =>
+        console.error("queue kick failed", e instanceof Error ? e.message : e),
+      );
+    });
+    lastKickAt = Date.now();
+  } catch {
+    // not in a request scope
+  }
+}
+
 /** Enqueue inside the caller's tenant transaction so the job commits with the state change. */
 export async function enqueue(
   t: TenantDb,
@@ -27,13 +57,60 @@ export async function enqueue(
     runAt: job.runAt,
     maxAttempts: job.maxAttempts,
   });
+  kickQueue();
+}
+
+/** Returns jobs whose worker died to the queue (or to `dead` once out of attempts). */
+export async function reclaimStaleJobs() {
+  const rows = await privilegedDb()
+    .update(jobQueue)
+    .set({
+      status: sql`case when ${jobQueue.attempts} >= ${jobQueue.maxAttempts} then 'dead' else 'pending' end::job_status`,
+      lastError: "worker lost: lock went stale",
+      lockedAt: null,
+      lockedBy: null,
+    })
+    .where(
+      and(
+        eq(jobQueue.status, "running"),
+        lt(jobQueue.lockedAt, sql`now() - make_interval(secs => ${STALE_LOCK_SECONDS})`),
+      ),
+    )
+    .returning({ id: jobQueue.id });
+  return rows.length;
 }
 
 export function backoffSeconds(attempts: number) {
   return Math.min(30 * 2 ** (attempts - 1), 3600);
 }
 
-export async function drainJobs(opts: { limit?: number; workerId?: string } = {}) {
+export type DrainSummary = { succeeded: number; retried: number; dead: number; reclaimed: number };
+
+/**
+ * Drains batch after batch until nothing is due or the time budget is spent, so a chain of jobs
+ * (webhook → ingest → …) completes in one invocation instead of one step per scheduler tick.
+ */
+export async function drainUntilEmpty(
+  opts: { budgetMs?: number; limit?: number; workerId?: string } = {},
+): Promise<DrainSummary & { batches: number; exhausted: boolean }> {
+  const deadline = Date.now() + (opts.budgetMs ?? 45_000);
+  const total = { succeeded: 0, retried: 0, dead: 0, reclaimed: await reclaimStaleJobs() };
+  let batches = 0;
+  for (;;) {
+    if (Date.now() >= deadline) return { ...total, batches, exhausted: true };
+    const r = await drainJobs({ limit: opts.limit ?? 5, workerId: opts.workerId, deadline });
+    const ran = r.succeeded + r.retried + r.dead;
+    if (ran === 0) return { ...total, batches, exhausted: false };
+    batches++;
+    total.succeeded += r.succeeded;
+    total.retried += r.retried;
+    total.dead += r.dead;
+  }
+}
+
+export async function drainJobs(
+  opts: { limit?: number; workerId?: string; deadline?: number } = {},
+) {
   const db = privilegedDb();
   const workerId = opts.workerId ?? `worker-${process.pid}`;
   const claimed = await db.transaction(async (tx) => {
@@ -64,6 +141,18 @@ export async function drainJobs(opts: { limit?: number; workerId?: string } = {}
 
   const summary = { succeeded: 0, retried: 0, dead: 0 };
   for (const job of claimed) {
+    if (opts.deadline && Date.now() >= opts.deadline) {
+      await db
+        .update(jobQueue)
+        .set({
+          status: "pending",
+          attempts: sql`${jobQueue.attempts} - 1`,
+          lockedAt: null,
+          lockedBy: null,
+        })
+        .where(eq(jobQueue.id, job.id));
+      continue;
+    }
     const handler = handlers.get(job.kind);
     try {
       if (!handler) throw new Error(`no handler registered for ${job.kind}`);

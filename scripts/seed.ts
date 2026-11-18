@@ -21,7 +21,10 @@ import { DEMO_ADMIN_EMAIL, DEMO_OWNER_EMAIL, demoUsers } from "./seed/users";
 const DEMO_ORG = "Demo Supplements Co.";
 const STORAGE_ROOT = process.env.SEED_STORAGE_DIR ?? ".data/storage";
 
-setStorageProviderForTests(fsStorage(STORAGE_ROOT));
+const realStorage = !!(
+  process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+if (!realStorage) setStorageProviderForTests(fsStorage(STORAGE_ROOT));
 const platform = await seedPlatform();
 console.log(
   `platform: product ${platform.product.id}, fulfillment center ${platform.fulfillmentCenter.id}`,
@@ -132,6 +135,10 @@ if (existing) {
   console.log(
     `demo org ${org.id}: label approved (${labelId.labelId}), sample order ${JSON.stringify(result)}`,
   );
-  console.log(`rendered files are under ${STORAGE_ROOT}/`);
+  console.log(
+    realStorage
+      ? "rendered files are in Supabase Storage"
+      : `rendered files are under ${STORAGE_ROOT}/`,
+  );
 }
 await closeDb();

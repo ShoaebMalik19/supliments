@@ -1,0 +1,44 @@
+# Asks the DEPLOYED app to check itself (database, tenant isolation, storage, auth, seed data,
+# label renderer, Shopify config, job queue) and reports each check as an annotation.
+# Needs the same repository secrets as the drain workflow: APP_URL and CRON_SECRET.
+name: Preflight (deployed app)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Run the deployed self-check
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -uo pipefail
+          missing=0
+          for name in APP_URL CRON_SECRET; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error title=Missing repository secret::${name} is not set (Settings → Secrets and variables → Actions)."
+              missing=1
+            fi
+          done
+          [ "$missing" = 0 ] || exit 1
+          code=$(curl -sS -o body.json -w '%{http_code}' --max-time 90 \
+            -H "Authorization: Bearer ${CRON_SECRET}" "${APP_URL%/}/api/cron/preflight") || {
+            echo "::error title=App unreachable::Could not reach APP_URL (curl exit $?)."
+            exit 1
+          }
+          if [ "$code" != 200 ]; then
+            echo "::error title=Preflight returned ${code}::404 means CRON_SECRET does not match Vercel, APP_URL is wrong, or this build is not deployed yet."
+            exit 1
+          fi
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync("body.json", "utf8"));
+            const level = { ok: "notice", warn: "warning", fail: "error" };
+            for (const c of r.checks) console.log(`::${level[c.status]} title=${c.status.toUpperCase()} ${c.id}::${c.detail}`);
+            const rows = r.checks.map((c) => `| ${c.status} | ${c.id} | ${c.detail} |`).join("\n");
+            require("fs").appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Preflight: ${r.ok ? "ready" : "NOT ready"}\n\n| | check | detail |\n|---|---|---|\n${rows}\n`);
+            process.exit(r.ok ? 0 : 1);
+          '

@@ -13,8 +13,12 @@ catalog under their label; we route orders to manufacturers. Architecture is dec
   Table DDL is generated (`npm run db:generate`); RLS, roles, triggers and
   functions are hand-written custom SQL migrations (`npm run db:custom -- --name=x`).
   CI fails if the TS schema and generated migrations drift.
-- Job queue: `job_queue` table (attempts, backoff, `dead` = DLQ), drained by `/api/cron/jobs`
-  (Vercel cron, `CRON_SECRET`). Enqueue in the same transaction as the state change.
+- Job queue: `job_queue` table (attempts, backoff, `dead` = DLQ). Enqueue in the same transaction
+  as the state change. `enqueue()` also kicks a drain right after the response (`after()`), so
+  work does not wait for the scheduler; `/api/cron/jobs` (GitHub Actions every 5 min, Vercel
+  daily) is the backstop and drives retries. Drains loop until empty within a time budget; jobs
+  locked > 10 min are reclaimed, so handlers must be idempotent. `src/queue.ts` is the only place
+  that knows every module's handlers.
 - Vitest against a real Postgres (`DATABASE_URL`, default local `app_test`).
 
 ## Commands
@@ -51,6 +55,14 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   `tests/supabase/supabase-roles.test.ts` reproduces Supabase's role model (non-superuser owner,
   default privileges, anon/authenticated/authenticator/service_role) and must stay green.
   `service_role` bypasses RLS by design: its key is server-only (storage signing, auth admin).
+- Live verification (real project, real roles): `npm run verify:catalog` (read-only DB audit of
+  grants/roles/policies/storage) and `npm run verify:isolation` (every table/function/GraphQL/
+  Storage via the public API as anon, and as a signed-in user with VERIFY_EMAIL/PASSWORD). The
+  probe counts a response as "denied" only if Supabase itself refused; a proxy/firewall block makes
+  the run invalid, never a pass. Workflow: `.github/workflows/verify-isolation.yml`.
+- `supabase_admin`'s default privileges still grant anon/authenticated everything it creates in
+  `public`, and we cannot revoke them. Never create objects in `public` from the dashboard or as
+  supabase_admin, and install extensions into the `extensions` schema. `verify:catalog` catches it.
 - Child tables carry their own `org_id`.
 - `src/db/privileged.ts` (bypasses RLS) may only be imported by modules auth, tenancy, admin,
   jobs, audit, `catalog/admin.ts` (catalog writes) and tests (ESLint). Every privileged
@@ -132,6 +144,10 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   so order webhooks are notifications only: the job re-fetches the order from the integration's
   own shop (`fetchOrder`) and ignores it if absent. Reconciler polls every 15 min with overlap.
 - Store pushes go through `pushShipmentToStore`/jobs; 401 → `needs_reauth`, pushes halt.
+- `SHOPIFY_API_VERSION` must stay inside Shopify's 12-month support window (a test fails 3 months
+  before it ages out). Orders need Partners "protected customer data" access, or order webhooks
+  and reads are refused. Dev-store checkouts (Bogus Gateway, test-mode payments) arrive with
+  `test: true` and are ignored by design; test real flows with an admin-created order marked paid.
 
 ### Orders, pricing, ledger (M4)
 
@@ -172,6 +188,22 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   real confirmed Auth users with password `SEED_DEMO_PASSWORD`; otherwise local-only ids.
 - `tests/e2e/order-loop.test.ts` is the definition of "the loop works". Extend it, never weaken
   it; only session, storage and Shopify HTTP (`tests/fake-shopify.ts`) are faked.
+
+### Go-live tooling
+
+- `GET /api/cron/preflight` (cron bearer secret) checks the deployed runtime end to end: env,
+  site URL vs deployment host, migrations, tenant path, API-role lockout, bucket privacy, storage
+  round trip, auth, golden render hashes, Shopify API version, seed data, queue health, email.
+  Never put a secret value in a check's detail (a test asserts this).
+- Workflows (manual): "Migrate and seed", "Preflight (deployed app)", "Drain job queue",
+  "Verify isolation (live Supabase)". All report problems as annotations naming the cause.
+
+### Notifications
+
+- Outbox → `notifications` (one per org owner/admin, dedupe key `event:user`, published in the
+  same transaction) → `EmailProvider` (Resend adapter, idempotency key per notification, 5
+  attempts). No provider configured = rows wait as pending, nothing dropped. Templates strip
+  control characters: order numbers and reasons come from stores and brand owners.
 
 ## Working rules
 
