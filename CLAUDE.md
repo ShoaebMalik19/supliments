@@ -188,7 +188,9 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   its webhooks are ignored). Webhook subscription state is per integration
   (`webhooks_subscribed_at` / `webhooks_error`): a failure at connect is retried by job
   `integrations.subscribe_webhooks` and shown on the page with a "Retry webhooks" action. `/admin/review`: every open review item with a link to act on;
-  resolve = done | dismissed with an audited note (`admin.resolveReviewItem`).
+  resolve = done | dismissed with an audited note (`admin.resolveReviewItem`). The same page lists
+  dead jobs (retry with a fresh attempt budget, or discard → `failed`, never picked up again) and
+  emails that exhausted their attempts (retry); each action is audited (`admin.settleDeadLetter`).
 
 ### Seed + E2E (M6)
 

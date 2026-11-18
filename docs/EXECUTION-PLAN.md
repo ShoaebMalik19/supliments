@@ -95,8 +95,8 @@ Ordered by risk to a paying customer, not by size.
 3. ~~**Retry the webhook subscription after connect**~~ **Done** (`phase-d`): failures are
    recorded on the integration, retried with backoff, and shown on `/settings/stores` with a
    "Retry webhooks" button.
-4. **Dead-letter visibility:** `dead` jobs and `failed` notifications appear in `/admin/review`
-   (today only preflight reports them).
+4. ~~**Dead-letter visibility**~~ **Done** (`phase-d`): `/admin/review` lists dead jobs (retry or
+   discard) and undelivered emails (retry), audited.
 5. **Vector PDF/X output** with an OutputIntent, replacing the 300 dpi raster, before the first
    print run with a real manufacturer.
 6. **Virus scanning** for uploads (currently a stub that never blocks).

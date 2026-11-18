@@ -6,13 +6,20 @@ import {
   brandProducts,
   fulfillmentOrders,
   integrations,
+  jobQueue,
   memberships,
+  notifications,
   platformAdmins,
   reviewQueueItems,
 } from "@/db/schema";
 import { setSessionSourceForTests } from "@/modules/auth";
 import { setStorageProviderForTests } from "@/modules/assets";
-import { listReviewQueue, resolveReviewItem } from "@/modules/admin";
+import {
+  listDeadLetters,
+  listReviewQueue,
+  resolveReviewItem,
+  settleDeadLetter,
+} from "@/modules/admin";
 import * as disconnectRoute from "@/app/api/integrations/[id]/disconnect/route";
 import * as publishRoute from "@/app/api/brand-products/[id]/publish/route";
 import { callRoute } from "./cross-tenant/routes";
@@ -121,5 +128,78 @@ describe("review queue", () => {
     expect(
       audits.some((a) => (a.after as { reviewItemId?: string }).reviewItemId === item!.id),
     ).toBe(true);
+  });
+});
+
+describe("dead letters", () => {
+  it("lists dead jobs and failed emails with their org, and retries or discards each once, audited", async () => {
+    const A = await createTenant();
+    const admin = await createUser();
+    const db = privilegedDb();
+    const [retryJob, dropJob] = await db
+      .insert(jobQueue)
+      .values(
+        ["retry", "drop"].map((k) => ({
+          orgId: A.org.id,
+          kind: `test.dead_${k}`,
+          status: "dead" as const,
+          attempts: 8,
+          lastError: "boom",
+        })),
+      )
+      .returning();
+    const [email] = await db
+      .insert(notifications)
+      .values({
+        orgId: A.org.id,
+        userId: A.owner.id,
+        channel: "email",
+        template: "order_received",
+        status: "failed",
+        attempts: 5,
+        lastError: "provider down",
+      })
+      .returning();
+
+    const listed = await listDeadLetters({ userId: admin.id });
+    expect(listed.jobs.find((j) => j.id === retryJob!.id)).toMatchObject({
+      kind: "test.dead_retry",
+      orgName: A.org.name,
+      lastError: "boom",
+    });
+    expect(listed.notifications.find((n) => n.id === email!.id)).toMatchObject({
+      orgName: A.org.name,
+      lastError: "provider down",
+    });
+
+    const me = { userId: admin.id };
+    expect(
+      await settleDeadLetter(me, { kind: "job", id: retryJob!.id, action: "retry" }),
+    ).not.toBeNull();
+    expect(
+      await settleDeadLetter(me, { kind: "job", id: retryJob!.id, action: "retry" }),
+    ).toBeNull();
+    expect(
+      await settleDeadLetter(me, { kind: "job", id: dropJob!.id, action: "discard" }),
+    ).not.toBeNull();
+    expect(await settleDeadLetter(me, { kind: "notification", id: email!.id })).not.toBeNull();
+    expect(await settleDeadLetter(me, { kind: "notification", id: email!.id })).toBeNull();
+
+    const job = async (id: string) =>
+      (await db.select().from(jobQueue).where(eq(jobQueue.id, id)))[0]!;
+    expect(await job(retryJob!.id)).toMatchObject({ status: "pending", attempts: 0 });
+    expect(await job(dropJob!.id)).toMatchObject({ status: "failed" });
+    const [n] = await db.select().from(notifications).where(eq(notifications.id, email!.id));
+    expect(n).toMatchObject({ status: "pending", attempts: 0 });
+
+    const audits = await db.select().from(auditLogs).where(eq(auditLogs.orgId, A.org.id));
+    expect(audits.map((a) => a.action).sort()).toEqual(
+      expect.arrayContaining([
+        "admin.dead_job_retry",
+        "admin.dead_job_discard",
+        "admin.failed_notification_retry",
+      ]),
+    );
+    await db.delete(jobQueue).where(eq(jobQueue.id, retryJob!.id));
   });
 });

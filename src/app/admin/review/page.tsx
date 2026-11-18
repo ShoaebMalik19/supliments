@@ -1,6 +1,11 @@
 import { revalidatePath } from "next/cache";
 import { adminOrNotFound } from "../guard";
-import { listReviewQueue, resolveReviewItem } from "@/modules/admin";
+import {
+  listDeadLetters,
+  listReviewQueue,
+  resolveReviewItem,
+  settleDeadLetter,
+} from "@/modules/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +15,20 @@ async function resolve(form: FormData) {
   const status = form.get("status") === "dismissed" ? "dismissed" : "done";
   const note = String(form.get("note") ?? "").trim() || null;
   await resolveReviewItem(admin, String(form.get("id")), { status, note });
+  revalidatePath("/admin/review");
+}
+
+async function settle(form: FormData) {
+  "use server";
+  const admin = await adminOrNotFound();
+  const id = String(form.get("id"));
+  const action = form.get("action") === "discard" ? "discard" : "retry";
+  await settleDeadLetter(
+    admin,
+    form.get("kind") === "notification"
+      ? { kind: "notification", id }
+      : { kind: "job", id, action },
+  );
   revalidatePath("/admin/review");
 }
 
@@ -26,7 +45,7 @@ const WHAT = {
 
 export default async function ReviewQueuePage() {
   const admin = await adminOrNotFound();
-  const items = await listReviewQueue(admin);
+  const [items, dead] = await Promise.all([listReviewQueue(admin), listDeadLetters(admin)]);
   return (
     <main>
       <h1>Review queue ({items.length} open)</h1>
@@ -59,6 +78,79 @@ export default async function ReviewQueuePage() {
                   <button type="submit" name="status" value="dismissed">
                     Dismiss
                   </button>
+                </form>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h2>Dead jobs ({dead.jobs.length})</h2>
+      <p>
+        Background work that failed every attempt. Retry after fixing the cause (handlers are
+        idempotent); discard only when the work is no longer wanted.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Last attempt</th>
+            <th>Job</th>
+            <th>Organization</th>
+            <th>Attempts</th>
+            <th>Last error</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {dead.jobs.map((j) => (
+            <tr key={j.id}>
+              <td>{j.updatedAt.toISOString()}</td>
+              <td>{j.kind}</td>
+              <td>{j.orgName ?? "platform"}</td>
+              <td>{j.attempts}</td>
+              <td>{j.lastError}</td>
+              <td>
+                <form action={settle}>
+                  <input type="hidden" name="kind" value="job" />
+                  <input type="hidden" name="id" value={j.id} />
+                  <button type="submit" name="action" value="retry">
+                    Retry
+                  </button>
+                  <button type="submit" name="action" value="discard">
+                    Discard
+                  </button>
+                </form>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h2>Undelivered emails ({dead.notifications.length})</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Last attempt</th>
+            <th>Email</th>
+            <th>Organization</th>
+            <th>Attempts</th>
+            <th>Last error</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {dead.notifications.map((n) => (
+            <tr key={n.id}>
+              <td>{n.updatedAt.toISOString()}</td>
+              <td>{n.template}</td>
+              <td>{n.orgName ?? "—"}</td>
+              <td>{n.attempts}</td>
+              <td>{n.lastError}</td>
+              <td>
+                <form action={settle}>
+                  <input type="hidden" name="kind" value="notification" />
+                  <input type="hidden" name="id" value={n.id} />
+                  <button type="submit">Retry</button>
                 </form>
               </td>
             </tr>
