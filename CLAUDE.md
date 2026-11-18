@@ -230,6 +230,10 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
 - Google sign-in via Supabase OAuth (`/auth/oauth/google` → `/auth/callback`). Any sign-in through
   the callback runs `ensureOrganizationFor`: a user without a membership gets their own org as
   owner (advisory lock, once). Owners rename org/brand on `/dashboard`.
+- Team invites (`tenancy/invitations.ts`, `/dashboard`, `/invite/[token]`): owner/admin invite
+  by email + role (never owner); only the token's sha256 is stored, 7-day expiry, re-invite
+  replaces the link. Emailed via `notifications.sendDirectEmail`, else shown once to the inviter.
+  Accept requires being signed in as the invited email; single use; audited.
 - `GET /api/health` (public): `{ok}` from a DB ping only. `src/instrumentation.ts` logs unhandled
   server errors as one JSON line (message, digest, path; never bodies or headers).
 - `/terms`, `/privacy` serve counsel text from `content/legal/*.md` (none shipped; preflight warns).

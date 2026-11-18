@@ -83,3 +83,11 @@ export function renderEmail(template: Template, payload: unknown, siteUrl: strin
       };
   }
 }
+
+export function inviteEmail(input: { orgName: string; inviterEmail: string; acceptUrl: string }) {
+  const org = clean(input.orgName, 100) || "a brand";
+  return {
+    subject: `You're invited to ${org}`,
+    text: `${clean(input.inviterEmail, 254)} invited you to join ${org} on the private-label platform.\n\nAccept within 7 days (sign in or create an account with this email address first):\n${input.acceptUrl}`,
+  };
+}

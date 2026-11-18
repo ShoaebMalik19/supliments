@@ -4,8 +4,11 @@ import { organizations } from "@/db/schema";
 import { withTenant } from "@/db/tenant";
 import { revalidatePath } from "next/cache";
 import { listBrands, renameBrand } from "@/modules/branding";
+import { InviteForm } from "./invite-form";
+import { revoke } from "./invite-actions";
 import {
   can,
+  listPendingInvites,
   orgMembers,
   renameOrganization,
   requireTenant,
@@ -28,9 +31,15 @@ async function rename(form: FormData) {
 export default async function DashboardPage() {
   const ctx = await resolveTenant();
   if (!ctx) redirect("/login");
-  const { org, members, brand } = await withTenant(ctx.orgId, async (t) => {
+  const manageMembers = can(ctx.role, "members:manage");
+  const { org, members, brand, invites } = await withTenant(ctx.orgId, async (t) => {
     const [org] = await t.tx.select().from(organizations);
-    return { org, members: await orgMembers(t), brand: (await listBrands(t))[0] ?? null };
+    return {
+      org,
+      members: await orgMembers(t),
+      brand: (await listBrands(t))[0] ?? null,
+      invites: manageMembers ? await listPendingInvites(t) : [],
+    };
   });
   return (
     <main>
@@ -66,6 +75,27 @@ export default async function DashboardPage() {
           </li>
         ))}
       </ul>
+      {manageMembers && (
+        <>
+          {invites.length > 0 && (
+            <>
+              <h3>Pending invitations</h3>
+              <ul>
+                {invites.map((i) => (
+                  <li key={i.id}>
+                    {i.email} — {i.role} (expires {i.expiresAt.toISOString().slice(0, 10)})
+                    <form action={revoke}>
+                      <input type="hidden" name="id" value={i.id} />
+                      <button type="submit">Revoke</button>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          <InviteForm />
+        </>
+      )}
       <form action="/auth/logout" method="post">
         <button type="submit">Log out</button>
       </form>

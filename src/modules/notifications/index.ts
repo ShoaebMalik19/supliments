@@ -12,7 +12,7 @@ export {
   type EmailProvider,
   type EmailMessage,
 } from "./email";
-export { renderEmail, templateFor, TEMPLATES, type Template } from "./templates";
+export { inviteEmail, renderEmail, templateFor, TEMPLATES, type Template } from "./templates";
 
 export const MAX_SEND_ATTEMPTS = 5;
 
@@ -169,4 +169,24 @@ export async function retryFailedNotification(id: string, tx?: Tx) {
       template: notifications.template,
     });
   return n ?? null;
+}
+
+/**
+ * One-off email outside the outbox (e.g. an invitation carrying a single-use link that must not
+ * be stored). Returns false when no provider is configured or the send fails.
+ */
+export async function sendDirectEmail(message: {
+  to: string;
+  subject: string;
+  text: string;
+  idempotencyKey: string;
+}) {
+  const provider = emailProvider();
+  if (!provider) return false;
+  try {
+    await provider.send(message);
+    return true;
+  } catch {
+    return false;
+  }
 }
