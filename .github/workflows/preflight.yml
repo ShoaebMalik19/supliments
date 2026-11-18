@@ -1,14 +1,16 @@
 # Asks the DEPLOYED app to check itself (database, tenant isolation, storage, auth, seed data,
 # label renderer, Shopify config, job queue) and reports each check as an annotation.
-# Runs after every successful production deployment, daily, and on demand. Authenticates with
-# the run's GitHub OIDC token; no repository secrets needed.
+# Runs after every push to main (once that commit is live), daily, and on demand. Authenticates
+# with the run's GitHub OIDC token; no repository secrets needed. (Vercel's deployment_status
+# events carry no branch ref, so the app would rightly refuse their tokens.)
 name: Preflight (deployed app)
 
 on:
   workflow_dispatch:
   schedule:
     - cron: "17 6 * * *"
-  deployment_status:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -16,23 +18,34 @@ permissions:
 
 jobs:
   preflight:
-    if: >-
-      github.event_name != 'deployment_status' ||
-      (github.event.deployment_status.state == 'success' &&
-       github.event.deployment.environment == 'Production')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
           sparse-checkout: .github/scripts
+      - name: Wait until this commit is live
+        if: github.event_name == 'push'
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          url="${APP_URL:-https://supliments-pi.vercel.app}"
+          want="${GITHUB_SHA:0:12}"
+          for i in $(seq 1 40); do
+            got=$(curl -sS --max-time 10 "${url%/}/api/health" | jq -r '.commit // empty' || true)
+            [ "$got" = "$want" ] && { echo "live: $got"; exit 0; }
+            sleep 15
+          done
+          echo "::error title=Deploy not live::${want} was not serving after 10 minutes (serving: ${got:-unknown}). Check the Vercel build log; a failed migration aborts the deploy."
+          exit 1
       - name: Run the deployed self-check
         env:
           APP_URL: ${{ vars.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -uo pipefail
-          code=$(.github/scripts/call-app.sh /api/cron/preflight body.json 90) || exit 1
+          .github/scripts/call-app.sh /api/cron/preflight body.json 90 || exit 1
+          code=$(cat body.json.status)
           if [ "$code" != 200 ]; then
             echo "::error title=Preflight returned ${code}::$(head -c 300 body.json)"
             exit 1

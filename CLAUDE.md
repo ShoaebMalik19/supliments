@@ -223,7 +223,7 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   warns). Preview builds never migrate: they share the production database.
 - Cron routes accept the `CRON_SECRET` bearer (Vercel cron) or a GitHub Actions OIDC token from
   `CRON_GITHUB_REPOSITORY`'s main branch (audience `supliments-cron`, `adapters/github/oidc.ts`),
-  so "Drain job queue" and "Preflight" (after each production deploy, daily) need no repo
+  so "Drain job queue" and "Preflight" (after each push to main once that commit is live, daily) need no repo
   secrets. Vercel Deployment Protection must cover previews only, never the production domain
   (Shopify, brand owners and the workflows call it). Production: `https://supliments-pi.vercel.app`.
 - Manual workflows: "Migrate and seed" (fallback, needs secrets), "Verify isolation (live

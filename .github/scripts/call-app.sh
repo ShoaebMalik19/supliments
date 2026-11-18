@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Calls a scheduler-facing route of the deployed app. Authenticates with this run's GitHub OIDC
-# token (the app trusts main-branch tokens of its own repository), or CRON_SECRET when set.
+# Calls a scheduler-facing route of the deployed app and writes the response body to <output-file>
+# and the HTTP status to <output-file>.status. Authenticates with this run's GitHub OIDC token
+# (the app trusts main-branch tokens of its own repository), or CRON_SECRET when set.
 # Usage: call-app.sh <path> <output-file> [max-seconds]
 set -uo pipefail
 path="$1"; out="$2"; max="${3:-60}"
@@ -19,12 +20,12 @@ code=$(curl -sS -o "$out" -w '%{http_code}' --max-time "$max" --retry 2 --retry-
   echo "::error title=App unreachable::Could not reach ${APP_URL} (curl exit $?)."
   exit 1
 }
+echo "$code" > "$out.status"
 if [ "$code" = 404 ]; then
-  echo "::error title=${path} returned 404::The app did not accept this run's credential. Set CRON_GITHUB_REPOSITORY in Vercel to this repository (owner/name), or check that this build is deployed."
+  echo "::error title=${path} returned 404::The app did not accept this run's credential (ref ${GITHUB_REF:-?}). Only runs on main are trusted; check CRON_GITHUB_REPOSITORY in Vercel and that this build is deployed."
   exit 1
 fi
 if [ "$code" = 401 ] || [ "$code" = 403 ]; then
   echo "::error title=${path} returned ${code}::Vercel Deployment Protection is blocking the production domain; protect previews only."
   exit 1
 fi
-echo "$code"
