@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import sharp from "sharp";
-import { PDFDocument } from "pdf-lib";
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream } from "pdf-lib";
 import { privilegedDb } from "@/db/privileged";
 import { withTenant } from "@/db/tenant";
 import {
@@ -439,6 +439,31 @@ describe("renderer", () => {
       for (const k of ["x", "y", "width", "height"] as const)
         expect(box[k]).toBeCloseTo(want[k], 3);
     expect(full.width).toBeCloseTo(447.874, 2);
+  });
+
+  it("print PDF is vector with an sRGB OutputIntent; only a logo is embedded as an image", async () => {
+    const template = placeholder();
+    const imageCount = async (bytes: Uint8Array) => {
+      const doc = await PDFDocument.load(bytes);
+      const xobjects = doc.getPage(0).node.Resources()?.lookup(PDFName.of("XObject"));
+      return xobjects instanceof PDFDict ? xobjects.keys().length : 0;
+    };
+    const plain = await renderPrintPdf(input(template));
+    expect(await imageCount(plain)).toBe(0);
+    const doc = await PDFDocument.load(plain);
+    const intents = doc.catalog.lookup(PDFName.of("OutputIntents"), PDFArray);
+    const intent = intents.lookup(0, PDFDict);
+    expect(intent.get(PDFName.of("S"))?.toString()).toBe("/GTS_PDFX");
+    const profile = intent.lookup(PDFName.of("DestOutputProfile"));
+    expect(profile).toBeInstanceOf(PDFRawStream);
+    expect((profile as PDFRawStream).dict.get(PDFName.of("N"))?.toString()).toBe("3");
+
+    const logoKey = template.editableFields.find((f) => f.type === "image")!.key;
+    const withLogo = await renderPrintPdf({
+      ...input(template, { ...VALID_DESIGN, [logoKey]: "0190a000-0000-7000-8000-000000000001" }),
+      images: { [logoKey]: new Uint8Array(await pngBytes(40, 20, "#1F6FEB")) },
+    });
+    expect(await imageCount(withLogo)).toBe(1);
   });
 
   it("print-resolution PNG has the spec dpi pixel dimensions (with bleed)", async () => {

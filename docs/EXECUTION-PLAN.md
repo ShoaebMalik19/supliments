@@ -102,8 +102,9 @@ Ordered by risk to a paying customer, not by size.
    "Retry webhooks" button.
 4. ~~**Dead-letter visibility**~~ **Done** (`phase-d`): `/admin/review` lists dead jobs (retry or
    discard) and undelivered emails (retry), audited.
-5. **Vector PDF/X output** with an OutputIntent, replacing the 300 dpi raster, before the first
-   print run with a real manufacturer.
+5. ~~**Vector PDF output**~~ **Done**: print PDFs are vector (text as outlines) with an sRGB
+   OutputIntent. Ask the manufacturer to preflight one file; if they require CMYK PDF/X-1a, that
+   conversion is their prepress step or a follow-up here.
 6. **Virus scanning** for uploads (currently a stub that never blocks).
 7. **Real bottle photography** for mockups: data only (`mockup_spec.backgroundAssetId`).
 8. **Live payments** (§10), unblocked when a §18 default is decided; `PaymentProvider` already

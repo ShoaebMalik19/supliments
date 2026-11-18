@@ -124,8 +124,9 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
 
 - `labels` owns labels + label_templates. Templates are DATA (`db/seed/label-templates/*.json`,
   `loadLabelTemplate`); label geometry in code is a bug. The placeholder is `is_placeholder`.
-- One renderer (`labels/render.ts`) for preview PNG, print PDF (MediaBox=BleedBox, TrimBox inset)
-  and mockups; outputs go through `storeGeneratedAsset` under the label's org.
+- One renderer (`labels/render.ts`) for preview PNG, print PDF (MediaBox=BleedBox, TrimBox inset;
+  vector shapes and glyph outlines, logos embedded at native resolution, sRGB `GTS_PDFX`
+  OutputIntent; the printer converts to the template's press profile) and mockups; outputs go through `storeGeneratedAsset` under the label's org.
 - Only drafts edit in place; other edits create version max+1. Approval freezes PDF + mockups and
   supersedes the previous approved version. Publishing/orders use `getApprovedLabel()`.
 - Tenants may INSERT open review items; closing is privileged (`admin.closeReviewItem`).
