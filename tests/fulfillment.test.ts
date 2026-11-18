@@ -1,7 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
 import {
+  assets,
+  auditLogs,
+  outboxEvents,
   dispatchBatches,
   fulfillmentOrders,
   jobQueue,
@@ -22,8 +26,12 @@ import {
   importDispatchResults,
   pushShipment,
   scanStuckOrders,
+  purgeExpiredDispatchFiles,
+  DISPATCH_FILE_RETENTION_DAYS,
   submitPaidOrder,
 } from "@/modules/fulfillment";
+import { templateFor } from "@/modules/notifications";
+import { adminRecordShipment } from "@/modules/admin";
 import { fakeStorage } from "./fake-storage";
 import { exportedBatch, seedCenter, submittedOrder } from "./fulfillment-fixtures";
 import { ingestStandardOrder, orderReadyTenant } from "./order-fixtures";
@@ -300,5 +308,84 @@ describe("stuck-order monitor", () => {
     const items = await openItems(res.orderId);
     expect(items).toHaveLength(1);
     expect(items[0]!.type).toBe("payment_hold");
+    const overdue = await db()
+      .select()
+      .from(outboxEvents)
+      .where(
+        and(
+          eq(outboxEvents.aggregateId, res.orderId),
+          eq(outboxEvents.eventType, "order.payment_overdue"),
+        ),
+      );
+    expect(overdue).toHaveLength(1);
+    expect(templateFor(overdue[0]!)).toBe("order_payment_overdue");
+  });
+});
+
+describe("dispatch file retention", () => {
+  it("deletes our stored sheet only for finished batches past the claims window, audited", async () => {
+    const { batch } = await exportedBatch();
+    const id = batch.id;
+    const [row] = await db().select().from(dispatchBatches).where(eq(dispatchBatches.id, id));
+    const fileId = row!.fileAssetId!;
+    const [file] = await db().select().from(assets).where(eq(assets.id, fileId));
+    const old = new Date(Date.now() - (DISPATCH_FILE_RETENTION_DAYS + 1) * 86400_000);
+    const age = (status: "exported" | "completed") =>
+      db().transaction(async (tx) => {
+        await tx.execute(sql`set local session_replication_role = replica`);
+        await tx
+          .update(dispatchBatches)
+          .set({ status, updatedAt: old })
+          .where(eq(dispatchBatches.id, id));
+      });
+
+    await age("exported");
+    await purgeExpiredDispatchFiles();
+    expect(
+      (await db().select().from(dispatchBatches).where(eq(dispatchBatches.id, id)))[0]!.fileAssetId,
+    ).toBe(fileId);
+
+    await age("completed");
+    await purgeExpiredDispatchFiles();
+    expect(
+      (await db().select().from(dispatchBatches).where(eq(dispatchBatches.id, id)))[0]!.fileAssetId,
+    ).toBeNull();
+    expect(await db().select().from(assets).where(eq(assets.id, fileId))).toHaveLength(0);
+    expect(fakeStorage.removed).toContain(`${file!.bucket}/${file!.storageKey}`);
+    const audits = await db()
+      .select()
+      .from(auditLogs)
+      .where(and(eq(auditLogs.action, "dispatch.file_purged"), eq(auditLogs.entityId, id)));
+    expect(audits).toHaveLength(1);
+  });
+});
+
+describe("manual shipment entry (admin)", () => {
+  it("ships the order, enqueues the store push once, and refuses bad or repeated input", async () => {
+    const { orderId, admin } = await submittedOrder();
+    const me = { userId: admin.id };
+    await expect(adminRecordShipment(me, orderId, { carrier: "UPS" })).rejects.toMatchObject({
+      status: 400,
+    });
+    const tracking = `1Z${Date.now()}`;
+    const res = await adminRecordShipment(me, orderId, {
+      carrier: "UPS",
+      trackingNumber: tracking,
+    });
+    expect(res).toMatchObject({ outcome: "applied" });
+    expect((await orderRow(orderId)).status).toBe("shipped");
+    const [s] = await db().select().from(shipments).where(eq(shipments.trackingNumber, tracking));
+    expect(s).toMatchObject({ carrier: "UPS" });
+    const pushes = await db()
+      .select()
+      .from(jobQueue)
+      .where(eq(jobQueue.dedupeKey, `push:${s!.id}`));
+    expect(pushes).toHaveLength(1);
+    await expect(
+      adminRecordShipment(me, orderId, { carrier: "UPS", trackingNumber: "OTHER123" }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(
+      await adminRecordShipment(me, randomUUID(), { carrier: "UPS", trackingNumber: "X12" }),
+    ).toBeNull();
   });
 });

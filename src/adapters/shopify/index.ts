@@ -28,7 +28,7 @@ export function apiVersionSupportDaysLeft(now = Date.now(), version = SHOPIFY_AP
 
 /** Minimal scopes for what v1 does: publish products, read orders, fulfill merchant-managed orders. */
 export const DEFAULT_SHOPIFY_SCOPES =
-  "write_products,read_orders,write_merchant_managed_fulfillment_orders";
+  "write_products,read_orders,write_merchant_managed_fulfillment_orders,read_publications,write_publications";
 
 export const SHOPIFY_WEBHOOK_TOPICS = [
   "orders/create",
@@ -153,62 +153,212 @@ function nextLink(headers: Headers): string | null {
   return null;
 }
 
-type ShopifyVariant = {
-  id: number | string;
-  sku: string | null;
-  inventory_item_id?: number | null;
-};
-type ShopifyProduct = { id: number | string; variants: ShopifyVariant[] };
+const STAGED_UPLOAD_HOSTS = new Set(["shopify-staged-uploads.storage.googleapis.com"]);
+const gid = (type: string, id: string) => `gid://shopify/${type}/${id}`;
+const gidTail = (g: string) => g.slice(g.lastIndexOf("/") + 1);
 
-function productBody(p: PublishProductInput) {
+export class ShopifyUserError extends Error {
+  constructor(
+    readonly operation: string,
+    readonly messages: string[],
+  ) {
+    super(`shopify ${operation}: ${messages.join("; ").slice(0, 400)}`);
+    this.name = "ShopifyUserError";
+  }
+}
+
+type UserErrors = { field?: string[] | null; message: string }[];
+
+async function graphql<T>(conn: StoreConnection, query: string, variables: object): Promise<T> {
+  const r = await api(conn, "POST", "graphql.json", { query, variables });
+  const body = r.body as { data?: T; errors?: { message: string }[] };
+  if (body.errors?.length || !body.data)
+    throw new Error(
+      `shopify graphql: ${(body.errors ?? [{ message: "no data" }]).map((e) => e.message).join("; ")}`.slice(
+        0,
+        400,
+      ),
+    );
+  return body.data;
+}
+
+const STAGED_UPLOADS = `mutation stage($input: [StagedUploadInput!]!) {
+  stagedUploadsCreate(input: $input) {
+    stagedTargets { url resourceUrl parameters { name value } }
+    userErrors { field message }
+  }
+}`;
+
+/** Uploads images through Shopify's staged-upload targets; returns each file's resourceUrl. */
+async function stageImages(conn: StoreConnection, images: PublishProductInput["images"]) {
+  if (!images.length) return [];
+  const data = await graphql<{
+    stagedUploadsCreate: {
+      stagedTargets: {
+        url: string;
+        resourceUrl: string;
+        parameters: { name: string; value: string }[];
+      }[];
+      userErrors: UserErrors;
+    };
+  }>(conn, STAGED_UPLOADS, {
+    input: images.map((img) => ({
+      filename: img.filename,
+      mimeType: img.mime,
+      resource: "PRODUCT_IMAGE",
+      httpMethod: "POST",
+      fileSize: String(img.data.length),
+    })),
+  });
+  const { stagedTargets, userErrors } = data.stagedUploadsCreate;
+  if (userErrors.length)
+    throw new ShopifyUserError(
+      "stagedUploadsCreate",
+      userErrors.map((e) => e.message),
+    );
+  if (stagedTargets.length !== images.length)
+    throw new Error("shopify stagedUploadsCreate returned the wrong number of targets");
+  return Promise.all(
+    stagedTargets.map(async (target, i) => {
+      const host = new URL(target.url).host;
+      if (host !== conn.shop && !STAGED_UPLOAD_HOSTS.has(host))
+        throw new Error(`refusing staged upload to unexpected host ${host}`);
+      const img = images[i]!;
+      const form = new FormData();
+      for (const p of target.parameters) form.append(p.name, p.value);
+      form.append("file", new Blob([Buffer.from(img.data)], { type: img.mime }), img.filename);
+      const res = await doFetch(target.url, { method: "POST", body: form });
+      if (!res.ok) throw new ShopifyHttpError(res.status, "staged upload");
+      return { resourceUrl: target.resourceUrl, filename: img.filename };
+    }),
+  );
+}
+
+const PRODUCT_SET = `mutation publish($input: ProductSetInput!, $identifier: ProductSetIdentifiers) {
+  productSet(synchronous: true, input: $input, identifier: $identifier) {
+    product { id variants(first: 100) { nodes { id sku inventoryItem { id } } } }
+    userErrors { field message }
+  }
+}`;
+
+type ProductSetResult = {
+  productSet: {
+    product: {
+      id: string;
+      variants: {
+        nodes: { id: string; sku: string | null; inventoryItem: { id: string } | null }[];
+      };
+    } | null;
+    userErrors: UserErrors;
+  };
+};
+
+const OPTION = "Variant";
+
+function productSetInput(
+  p: PublishProductInput,
+  files: { resourceUrl: string; filename: string }[],
+  keepVariantIds: boolean,
+) {
   return {
     title: p.title,
-    body_html: p.descriptionHtml ?? "",
-    options: [{ name: "Variant" }],
-    variants: p.variants.map((v) => ({
-      ...(v.externalVariantId ? { id: Number(v.externalVariantId) } : {}),
+    descriptionHtml: p.descriptionHtml ?? "",
+    status: "ACTIVE",
+    productOptions: [{ name: OPTION, values: p.variants.map((v) => ({ name: v.title })) }],
+    files: files.map((f) => ({
+      originalSource: f.resourceUrl,
+      filename: f.filename,
+      contentType: "IMAGE",
+    })),
+    variants: p.variants.map((v, i) => ({
+      ...(keepVariantIds && v.externalVariantId
+        ? { id: gid("ProductVariant", v.externalVariantId) }
+        : {}),
+      position: i + 1,
+      optionValues: [{ optionName: OPTION, name: v.title }],
       sku: v.sku,
       price: minorToDecimal(v.priceMinor),
-      option1: v.title,
-      inventory_management: null,
-    })),
-    images: p.images.map((img) => ({
-      attachment: Buffer.from(img.data).toString("base64"),
-      filename: img.filename,
+      inventoryItem: { tracked: false },
     })),
   };
 }
 
+const ONLINE_STORE = `{ publications(first: 25) { nodes { id name } } }`;
+const PUBLISH = `mutation pub($id: ID!, $input: [PublicationInput!]!) {
+  publishablePublish(id: $id, input: $input) { userErrors { field message } }
+}`;
+
+/**
+ * GraphQL-created products are on no sales channel; put a new product on the Online Store.
+ * Best-effort: the product already exists, so a failure here is logged, never thrown (a retry
+ * would otherwise create a duplicate).
+ */
+async function publishToOnlineStore(conn: StoreConnection, productGid: string) {
+  try {
+    const { publications } = await graphql<{
+      publications: { nodes: { id: string; name: string }[] };
+    }>(conn, ONLINE_STORE, {});
+    const store = publications.nodes.find((p) => p.name === "Online Store");
+    if (!store) throw new Error("no Online Store sales channel");
+    const out = await graphql<{ publishablePublish: { userErrors: UserErrors } }>(conn, PUBLISH, {
+      id: productGid,
+      input: [{ publicationId: store.id }],
+    });
+    if (out.publishablePublish.userErrors.length)
+      throw new ShopifyUserError(
+        "publishablePublish",
+        out.publishablePublish.userErrors.map((e) => e.message),
+      );
+  } catch (e) {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        event: "shopify_online_store_publish_failed",
+        shop: conn.shop,
+        message: (e as Error).message.slice(0, 300),
+      }),
+    );
+  }
+}
+
+/**
+ * Creates or updates the product with GraphQL `productSet` (images via staged uploads). Ids are
+ * stored as the numeric tail of Shopify's GIDs, the same ids order payloads carry. A product
+ * deleted in the store is recreated.
+ */
 async function pushProduct(
   conn: StoreConnection,
   p: PublishProductInput,
 ): Promise<PublishedProduct> {
-  let product: ShopifyProduct | null = null;
-  if (p.externalProductId) {
-    try {
-      const r = await api(conn, "PUT", `products/${encodeURIComponent(p.externalProductId)}.json`, {
-        product: { id: Number(p.externalProductId), ...productBody(p) },
-      });
-      product = (r.body as { product: ShopifyProduct }).product;
-    } catch (e) {
-      if (!(e instanceof ShopifyHttpError && e.status === 404)) throw e;
-    }
-  }
-  if (!product) {
-    const fresh = { ...p, variants: p.variants.map((v) => ({ ...v, externalVariantId: null })) };
-    const r = await api(conn, "POST", "products.json", { product: productBody(fresh) });
-    product = (r.body as { product: ShopifyProduct }).product;
-  }
-  const bySku = new Map(product.variants.map((v) => [v.sku ?? "", v]));
+  const files = await stageImages(conn, p.images);
+  const run = async (update: boolean) =>
+    (
+      await graphql<ProductSetResult>(conn, PRODUCT_SET, {
+        input: productSetInput(p, files, update),
+        identifier: update ? { id: gid("Product", p.externalProductId!) } : undefined,
+      })
+    ).productSet;
+  let out = p.externalProductId ? await run(true) : null;
+  if (out && !out.product && out.userErrors.some((e) => /not (exist|found)/i.test(e.message)))
+    out = null;
+  const created = !out;
+  if (!out) out = await run(false);
+  if (out.userErrors.length || !out.product)
+    throw new ShopifyUserError(
+      "productSet",
+      out.userErrors.map((e) => e.message),
+    );
+  if (created) await publishToOnlineStore(conn, out.product.id);
+  const bySku = new Map(out.product.variants.nodes.map((v) => [v.sku ?? "", v]));
   return {
-    externalProductId: String(product.id),
+    externalProductId: gidTail(out.product.id),
     variants: p.variants.map((v) => {
       const got = bySku.get(v.sku);
       if (!got) throw new Error(`shopify did not return variant for sku ${v.sku}`);
       return {
         sku: v.sku,
-        externalVariantId: String(got.id),
-        externalInventoryItemId: got.inventory_item_id ? String(got.inventory_item_id) : null,
+        externalVariantId: gidTail(got.id),
+        externalInventoryItemId: got.inventoryItem ? gidTail(got.inventoryItem.id) : null,
       };
     }),
   };

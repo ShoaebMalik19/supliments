@@ -108,7 +108,9 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
 - Assets: one private bucket (`ASSETS_BUCKET`), signed URLs only (download TTL 60s). Keys are
   server-generated `org/{orgId}/{assetId}/{random}` (DB check; platform: `platform/...`).
   `upload_status` pending → ready | rejected (terminal); ready only after magic bytes + exact
-  size match. Tenants may UPDATE only upload_status/width/height/checksum. Virus scan: stub.
+  size match, plus a content policy (images must fully decode; PDFs with active content such as
+  JavaScript, launch actions or embedded files are rejected). Tenants may UPDATE only
+  upload_status/width/height/checksum. Malware scanning (`virus_scan_status`) awaits a vendor.
 
 ## Order loop (MVP) — contracts shared across modules
 
@@ -124,8 +126,9 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
 
 - `labels` owns labels + label_templates. Templates are DATA (`db/seed/label-templates/*.json`,
   `loadLabelTemplate`); label geometry in code is a bug. The placeholder is `is_placeholder`.
-- One renderer (`labels/render.ts`) for preview PNG, print PDF (MediaBox=BleedBox, TrimBox inset)
-  and mockups; outputs go through `storeGeneratedAsset` under the label's org.
+- One renderer (`labels/render.ts`) for preview PNG, print PDF (MediaBox=BleedBox, TrimBox inset;
+  vector shapes and glyph outlines, logos embedded at native resolution, sRGB `GTS_PDFX`
+  OutputIntent; the printer converts to the template's press profile) and mockups; outputs go through `storeGeneratedAsset` under the label's org.
 - Only drafts edit in place; other edits create version max+1. Approval freezes PDF + mockups and
   supersedes the previous approved version. Publishing/orders use `getApprovedLabel()`.
 - Tenants may INSERT open review items; closing is privileged (`admin.closeReviewItem`).
@@ -143,6 +146,10 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
 - Webhooks: HMAC over raw body → persist + enqueue → 200. The HMAC does not cover the shop header,
   so order webhooks are notifications only: the job re-fetches the order from the integration's
   own shop (`fetchOrder`) and ignores it if absent. Reconciler polls every 15 min with overlap.
+- Product publish is GraphQL: images via `stagedUploadsCreate` (upload host allowlisted, no token
+  sent there) → `productSet` (synchronous; GIDs stored as their numeric tail, the ids order
+  payloads carry; a product deleted in the store is recreated) → new products published to the
+  Online Store (best-effort, logged). userErrors fail the job with Shopify's messages.
 - Store pushes go through `pushShipmentToStore`/jobs; 401 → `needs_reauth`, pushes halt.
 - Privacy (Shopify compliance webhooks, configured in the Partners app, never via the API):
   `customers/data_request` → JSON export as an org asset + owner email + review item due in 30
@@ -178,8 +185,12 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   order `submitted`. Missing partner SKU code blocks export and opens a review item.
 - Import is idempotent on our reference within the batch; shipment unique (carrier, tracking).
   Statuses only move forward. A new shipment enqueues `fulfillment.push_to_store` (key
-  `shipment:{id}`); pushes never repeat. `fulfillment/platform.ts` is the privileged part.
+  `push:{id}`; store idempotency key `shipment:{id}`); pushes never repeat. Admins can also
+  record a shipment by hand on `/admin/orders/[id]` (`adminRecordShipment`, same apply path). `fulfillment/platform.ts` is the privileged part.
 - Stuck monitor (hourly job): thresholds in `STUCK_THRESHOLDS`; one open review item per entity.
+  An order flagged for payment (72 h) also emails the owner once (`order.payment_overdue`). The
+  same job deletes our stored dispatch sheet of completed/cancelled batches after
+  `DISPATCH_FILE_RETENTION_DAYS` (90; the sheets hold customer addresses), audited.
 
 ### Operating without SQL
 
@@ -207,8 +218,29 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   site URL vs deployment host, migrations, tenant path, API-role lockout, bucket privacy, storage
   round trip, auth, golden render hashes, Shopify API version, seed data, queue health, email.
   Never put a secret value in a check's detail (a test asserts this).
-- Workflows (manual): "Migrate and seed", "Preflight (deployed app)", "Drain job queue",
-  "Verify isolation (live Supabase)". All report problems as annotations naming the cause.
+- Production builds (`vercel.json` → `npm run build:vercel`, `scripts/vercel-build.ts`) apply
+  migrations (session pooler; failure aborts the deploy) and run the idempotent seed (failure only
+  warns). Preview builds never migrate: they share the production database.
+- Cron routes accept the `CRON_SECRET` bearer (Vercel cron) or a GitHub Actions OIDC token from
+  `CRON_GITHUB_REPOSITORY`'s main branch (audience `supliments-cron`, `adapters/github/oidc.ts`),
+  so "Drain job queue" and "Preflight" (after each production deploy, daily) need no repo
+  secrets. Vercel Deployment Protection must cover previews only, never the production domain
+  (Shopify, brand owners and the workflows call it). Production: `https://supliments-pi.vercel.app`.
+- Manual workflows: "Migrate and seed" (fallback, needs secrets), "Verify isolation (live
+  Supabase)". All workflows report problems as annotations naming the cause.
+
+### Auth, monitoring, legal
+
+- Google sign-in via Supabase OAuth (`/auth/oauth/google` → `/auth/callback`). Any sign-in through
+  the callback runs `ensureOrganizationFor`: a user without a membership gets their own org as
+  owner (advisory lock, once). Owners rename org/brand on `/dashboard`.
+- Team invites (`tenancy/invitations.ts`, `/dashboard`, `/invite/[token]`): owner/admin invite
+  by email + role (never owner); only the token's sha256 is stored, 7-day expiry, re-invite
+  replaces the link. Emailed via `notifications.sendDirectEmail`, else shown once to the inviter.
+  Accept requires being signed in as the invited email; single use; audited.
+- `GET /api/health` (public): `{ok}` from a DB ping only. `src/instrumentation.ts` logs unhandled
+  server errors as one JSON line (message, digest, path; never bodies or headers).
+- `/terms`, `/privacy` serve counsel text from `content/legal/*.md` (none shipped; preflight warns).
 
 ### Notifications
 

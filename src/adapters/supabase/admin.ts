@@ -33,8 +33,13 @@ export const supabaseAuthAdmin: AuthAdmin = {
     try {
       const res = await fetch(`${url}/auth/v1/settings`, { headers: { apikey: key } });
       if (!res.ok) return { reachable: false, emailSignup: null, detail: `HTTP ${res.status}` };
-      const body = (await res.json()) as { external?: { email?: boolean } };
-      return { reachable: true, emailSignup: body.external?.email ?? null, detail: "ok" };
+      const body = (await res.json()) as { external?: { email?: boolean; google?: boolean } };
+      return {
+        reachable: true,
+        emailSignup: body.external?.email ?? null,
+        detail: "ok",
+        oauth: { google: body.external?.google ?? false },
+      };
     } catch (e) {
       return { reachable: false, emailSignup: null, detail: (e as Error).message.slice(0, 120) };
     }

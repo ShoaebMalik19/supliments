@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
 import type { Tx } from "@/db/client";
 import {
@@ -13,12 +13,13 @@ import {
   orderEvents,
   orderItems,
   orders,
+  outboxEvents,
   partnerSkuMappings,
   reviewQueueItems,
   shipments,
   skus,
 } from "@/db/schema";
-import { signedUrlForAsset, storePlatformAsset } from "@/modules/assets";
+import { removePlatformAsset, signedUrlForAsset, storePlatformAsset } from "@/modules/assets";
 import type { CanonicalFulfillmentOrder, ShipTo } from "./provider";
 import { fulfillmentProvider } from "./providers";
 
@@ -72,7 +73,12 @@ export async function flagForReview(
     priority?: number;
   },
 ) {
-  await tx.insert(reviewQueueItems).values(input).onConflictDoNothing();
+  const opened = await tx
+    .insert(reviewQueueItems)
+    .values(input)
+    .onConflictDoNothing()
+    .returning({ id: reviewQueueItems.id });
+  return opened.length > 0;
 }
 
 /**
@@ -326,6 +332,43 @@ export async function settleBatch(adminUserId: string, batchId: string, report: 
   });
 }
 
+/** Our copy of a dispatch sheet holds customer addresses; keep it only through the claims window. */
+export const DISPATCH_FILE_RETENTION_DAYS = 90;
+
+export async function purgeExpiredDispatchFiles(now = new Date()) {
+  const cutoff = new Date(now.getTime() - DISPATCH_FILE_RETENTION_DAYS * 86400_000);
+  return privilegedDb().transaction(async (tx) => {
+    const expired = await tx
+      .select({ id: dispatchBatches.id, fileAssetId: dispatchBatches.fileAssetId })
+      .from(dispatchBatches)
+      .where(
+        and(
+          inArray(dispatchBatches.status, ["completed", "cancelled"]),
+          isNotNull(dispatchBatches.fileAssetId),
+          lt(dispatchBatches.updatedAt, cutoff),
+        ),
+      )
+      .for("update", { skipLocked: true });
+    for (const b of expired) {
+      await tx
+        .update(dispatchBatches)
+        .set({ fileAssetId: null })
+        .where(eq(dispatchBatches.id, b.id));
+      await removePlatformAsset(tx, b.fileAssetId!);
+      await tx.insert(auditLogs).values({
+        orgId: null,
+        actorUserId: null,
+        actorType: "system",
+        action: "dispatch.file_purged",
+        entityType: "dispatch_batch",
+        entityId: b.id,
+        after: { retentionDays: DISPATCH_FILE_RETENTION_DAYS },
+      });
+    }
+    return expired.length;
+  });
+}
+
 export const STUCK_THRESHOLDS = {
   awaitingPaymentHours: 72,
   needsReviewHours: 24,
@@ -350,18 +393,31 @@ export async function scanStuckOrders(now = new Date()) {
     };
     const flag = async (
       key: keyof typeof counts,
-      rows: { id: string; orgId: string }[],
+      rows: { id: string; orgId: string; number?: string | null }[],
       type: "failed_fulfillment" | "payment_hold",
       entityType: string,
     ) => {
       for (const r of rows) {
-        await flagForReview(tx, { orgId: r.orgId, type, entityType, entityId: r.id });
+        const opened = await flagForReview(tx, {
+          orgId: r.orgId,
+          type,
+          entityType,
+          entityId: r.id,
+        });
         counts[key]++;
+        if (opened && type === "payment_hold")
+          await tx.insert(outboxEvents).values({
+            orgId: r.orgId,
+            aggregateType: "order",
+            aggregateId: r.id,
+            eventType: "order.payment_overdue",
+            payload: { orderId: r.id, orderNumber: r.number ?? null },
+          });
       }
     };
     const stuckOrders = (status: "awaiting_payment" | "needs_review" | "on_hold", hours: number) =>
       tx
-        .select({ id: orders.id, orgId: orders.orgId })
+        .select({ id: orders.id, orgId: orders.orgId, number: orders.externalOrderNumber })
         .from(orders)
         .where(and(eq(orders.status, status), lt(orders.updatedAt, hoursAgo(now, hours))));
     await flag(

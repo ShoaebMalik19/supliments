@@ -1,37 +1,40 @@
 # Asks the DEPLOYED app to check itself (database, tenant isolation, storage, auth, seed data,
 # label renderer, Shopify config, job queue) and reports each check as an annotation.
-# Needs the same repository secrets as the drain workflow: APP_URL and CRON_SECRET.
+# Runs after every successful production deployment, daily, and on demand. Authenticates with
+# the run's GitHub OIDC token; no repository secrets needed.
 name: Preflight (deployed app)
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * *"
+  deployment_status:
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   preflight:
+    if: >-
+      github.event_name != 'deployment_status' ||
+      (github.event.deployment_status.state == 'success' &&
+       github.event.deployment.environment == 'Production')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
       - name: Run the deployed self-check
         env:
-          APP_URL: ${{ secrets.APP_URL }}
+          APP_URL: ${{ vars.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -uo pipefail
-          missing=0
-          for name in APP_URL CRON_SECRET; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error title=Missing repository secret::${name} is not set (Settings → Secrets and variables → Actions)."
-              missing=1
-            fi
-          done
-          [ "$missing" = 0 ] || exit 1
-          code=$(curl -sS -o body.json -w '%{http_code}' --max-time 90 \
-            -H "Authorization: Bearer ${CRON_SECRET}" "${APP_URL%/}/api/cron/preflight") || {
-            echo "::error title=App unreachable::Could not reach APP_URL (curl exit $?)."
-            exit 1
-          }
+          code=$(.github/scripts/call-app.sh /api/cron/preflight body.json 90) || exit 1
           if [ "$code" != 200 ]; then
-            echo "::error title=Preflight returned ${code}::404 means CRON_SECRET does not match Vercel, APP_URL is wrong, or this build is not deployed yet."
+            echo "::error title=Preflight returned ${code}::$(head -c 300 body.json)"
             exit 1
           fi
           node -e '

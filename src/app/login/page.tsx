@@ -27,6 +27,9 @@ export default async function LoginPage({
         </label>
         <button type="submit">Log in</button>
       </form>
+      <form action="/auth/oauth/google" method="get">
+        <button type="submit">Continue with Google</button>
+      </form>
       <p>
         <Link href="/forgot-password">Forgot password?</Link> · <Link href="/signup">Sign up</Link>
       </p>

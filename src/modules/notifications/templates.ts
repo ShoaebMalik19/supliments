@@ -5,6 +5,7 @@ export const TEMPLATES = [
   "label_approved",
   "label_rejected",
   "privacy_data_request",
+  "order_payment_overdue",
 ] as const;
 export type Template = (typeof TEMPLATES)[number];
 
@@ -26,6 +27,7 @@ export function templateFor(e: OutboxLike): Template | null {
   if (e.eventType === "label.approved") return "label_approved";
   if (e.eventType === "label.rejected") return "label_rejected";
   if (e.eventType === "privacy.data_request") return "privacy_data_request";
+  if (e.eventType === "order.payment_overdue") return "order_payment_overdue";
   if (e.eventType !== "order.status_changed") return null;
   if (p.to === "awaiting_payment" && p.from !== "awaiting_payment") return "order_received";
   if (p.to === "needs_review" || p.to === "on_hold") return "order_action_required";
@@ -52,6 +54,11 @@ export function renderEmail(template: Template, payload: unknown, siteUrl: strin
         subject: `Action needed on order ${order}`,
         text: `Order ${order} is on hold and will not be produced until it is resolved.\n\nReason: ${clean(p.holdReason) || "needs review"}\n\n${orderUrl}`,
       };
+    case "order_payment_overdue":
+      return {
+        subject: `Payment still outstanding for order ${order}`,
+        text: `We have not recorded payment for order ${order}, so it has not gone to production. Your customer is waiting.\n\nPlease settle the charge shown on the order, or reply to this email if you already have.\n\n${orderUrl}`,
+      };
     case "order_shipped":
       return {
         subject: `Order ${order} shipped`,
@@ -75,4 +82,12 @@ export function renderEmail(template: Template, payload: unknown, siteUrl: strin
         text: `The label for ${product} was not approved.\n\nReason: ${clean(p.reason, 500) || "see the label page"}\n\nEdit the label and submit it again.\n\n${labelUrl}`,
       };
   }
+}
+
+export function inviteEmail(input: { orgName: string; inviterEmail: string; acceptUrl: string }) {
+  const org = clean(input.orgName, 100) || "a brand";
+  return {
+    subject: `You're invited to ${org}`,
+    text: `${clean(input.inviterEmail, 254)} invited you to join ${org} on the private-label platform.\n\nAccept within 7 days (sign in or create an account with this email address first):\n${input.acceptUrl}`,
+  };
 }

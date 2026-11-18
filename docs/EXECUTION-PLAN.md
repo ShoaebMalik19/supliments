@@ -10,9 +10,9 @@ worked. Each step has a check that names its own failure, so nothing has to be d
 
 | Area | State |
 |---|---|
-| Code | Order loop, labels, Shopify, pricing/ledger, fulfillment, operator pages, email: done |
-| CI on `main` | **Red** since `6c02e0a`: the README rewrite fails the format check. Fixed on `go-live` |
-| Supabase `jjqxncbwfulwzraarvln` | 10 of 11 migrations applied (`0010` is on `go-live`); private bucket exists; **not seeded** (0 users) |
+| Code | MVP scope (§16 must-haves) built: order loop, labels (vector print PDF), Shopify incl. privacy webhooks, pricing/ledger, fulfillment incl. manual shipment entry, operator pages, email, Google sign-in, health endpoint, legal page shells |
+| CI on `main` | Green (go-live and Phase D merged) |
+| Supabase `jjqxncbwfulwzraarvln` | Migrations up to `0009` applied; `0010`–`0012` are applied by step A4; private bucket exists; **not seeded** (0 users) |
 | Isolation | Live catalog audit + 125 live probes as `anon`: 0 leaks. Signed-in probes need a seeded user |
 | Vercel | Deployed (URL known only to the owner). Not visible to this session's Vercel account |
 | Job queue | **Never drained**: `APP_URL` / `CRON_SECRET` repository secrets are missing (every scheduled run fails and says so) |
@@ -23,9 +23,7 @@ worked. Each step has a check that names its own failure, so nothing has to be d
 
 Do these in order. Each one ends with a check.
 
-1. **Merge the `go-live` PR into `main`.** It turns CI green (README formatting) and carries
-   migration `0010`, the queue fixes, preflight, the seed workflow and email.
-   *Check:* the CI run on `main` passes.
+1. ~~Merge the `go-live` PR~~ Done (PRs #6 and #7 merged; this one follows).
 2. **Add repository secrets** (GitHub → Settings → Secrets and variables → Actions):
    - `APP_URL`: the deployed origin, e.g. `https://<project>.vercel.app`
    - `CRON_SECRET`: exactly the value set in Vercel
@@ -90,26 +88,24 @@ Ordered by risk to a paying customer, not by size.
    brand owner downloads from an email link; redactions scrub customer data, deferring orders
    still in transit. Remaining gap: dispatch CSV files already handed to the manufacturer keep
    addresses (they are the manufacturer's copy; lifecycle rules for our stored copies are D9).
-2. **Product publish via GraphQL.** REST product endpoints are legacy, and new public (App Store)
-   apps must use GraphQL; custom/unlisted apps still work on REST, so this does not block the
-   first order. Deliberately not done blind: images need Shopify's staged-upload flow
-   (`stagedUploadsCreate` → upload to the issued target → `productSet` with `files`), which the
-   adapter's own-shop-only HTTP guard must allow for exactly that target host. Do it with a dev
-   store attached so the fake can be checked against real responses. The change stays inside
-   `src/adapters/shopify` (`pushProduct`); `CommerceProvider` does not change.
+2. ~~**Product publish via GraphQL**~~ **Done**: staged image uploads → `productSet` → Online
+   Store publication. Built from Shopify's 2026 Admin API reference and tested against the fake;
+   the first real publish (Phase C step 2) is its live check.
 3. ~~**Retry the webhook subscription after connect**~~ **Done** (`phase-d`): failures are
    recorded on the integration, retried with backoff, and shown on `/settings/stores` with a
    "Retry webhooks" button.
 4. ~~**Dead-letter visibility**~~ **Done** (`phase-d`): `/admin/review` lists dead jobs (retry or
    discard) and undelivered emails (retry), audited.
-5. **Vector PDF/X output** with an OutputIntent, replacing the 300 dpi raster, before the first
-   print run with a real manufacturer.
-6. **Virus scanning** for uploads (currently a stub that never blocks).
+5. ~~**Vector PDF output**~~ **Done**: print PDFs are vector (text as outlines) with an sRGB
+   OutputIntent. Ask the manufacturer to preflight one file; if they require CMYK PDF/X-1a, that
+   conversion is their prepress step or a follow-up here.
+6. **Virus scanning** for uploads. Partly done: uploads must pass a content policy (images decode
+   fully; PDFs with active content are rejected). A malware-scanning vendor is an owner decision.
 7. **Real bottle photography** for mockups: data only (`mockup_spec.backgroundAssetId`).
 8. **Live payments** (§10), unblocked when a §18 default is decided; `PaymentProvider` already
    has the seam.
-9. **Retention for dispatch CSVs** in storage: delete our stored copy once a batch is completed
-   and past the claims window, so redacted customers' addresses don't persist there.
+9. ~~**Retention for dispatch CSVs**~~ **Done**: stored sheets of completed/cancelled batches
+   are deleted after 90 days by the hourly job.
 
 ## Decisions the owner still owns
 

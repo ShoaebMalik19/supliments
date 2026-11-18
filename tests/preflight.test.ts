@@ -53,6 +53,12 @@ describe("deployment preflight", () => {
     expect(fakeStorage.removed.some((k) => k.includes("platform/preflight/"))).toBe(true);
   });
 
+  it("warns (never fails) while counsel's legal text is missing", async () => {
+    const r = await go();
+    expect(byId(r, "legal.pages")).toMatchObject({ status: "warn" });
+    expect(byId(r, "legal.pages").detail).toMatch(/terms\.md, privacy\.md/);
+  });
+
   it("never puts a secret value in its output", async () => {
     const text = JSON.stringify(await go({ env: { ...env, NEXT_PUBLIC_SITE_URL: undefined } }));
     for (const v of Object.values(SECRETS)) expect(text).not.toContain(v);

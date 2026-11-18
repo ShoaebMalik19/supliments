@@ -3,7 +3,8 @@ import { z } from "zod";
 import { privilegedDb } from "@/db/privileged";
 import { users } from "@/db/schema";
 import { recordAudit } from "@/modules/audit";
-import { provisionOrganization } from "@/modules/tenancy";
+import { ensureOrganizationFor, provisionOrganization } from "@/modules/tenancy";
+import { OAUTH_PROVIDERS, type OAuthProvider } from "./provider";
 import { session } from "./session";
 
 export { session, setSessionSourceForTests, ACTIVE_ORG_COOKIE } from "./session";
@@ -73,9 +74,21 @@ export async function resetPassword(password: string): Promise<Outcome> {
   return { ok: true };
 }
 
+/** Email verification, password-reset and social sign-in links all land here with a code. */
 export async function completeEmailLink(code: string): Promise<Outcome> {
   const res = await session().auth().exchangeCode(code);
   if (!res.ok) return { ok: false, error: res.error };
+  if (res.user?.email) {
+    const org = await ensureOrganizationFor({ userId: res.user.id, email: res.user.email });
+    if (org) await audit("auth.signup_oauth", res.user.id, org.id);
+  }
   await audit("auth.email_link_verified", res.user?.id ?? null);
   return { ok: true };
+}
+
+export async function startOAuth(provider: string) {
+  if (!(OAUTH_PROVIDERS as readonly string[]).includes(provider)) return null;
+  return session()
+    .auth()
+    .oauthUrl(provider as OAuthProvider, `${siteUrl()}/auth/callback?next=/dashboard`);
 }

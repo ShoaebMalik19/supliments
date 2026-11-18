@@ -1,15 +1,17 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { privilegedDb } from "@/db/privileged";
 import { auditLogs, brands, memberships, organizations, users } from "@/db/schema";
 import {
   completeEmailLink,
+  startOAuth,
   resetPassword,
   setSessionSourceForTests,
   signIn,
   signUp,
 } from "@/modules/auth";
-import { resolveTenant, provisionOrganization, can } from "@/modules/tenancy";
+import { resolveTenant, provisionOrganization, can, renameOrganization } from "@/modules/tenancy";
 import { FakeSession } from "./fake-session";
 import { createTenant } from "./helpers";
 
@@ -107,5 +109,69 @@ describe("tenant resolution", () => {
     expect(can("member", "members:manage")).toBe(false);
     expect(can("designer", "label:write")).toBe(true);
     expect(can("read_only", "brand:write")).toBe(false);
+  });
+});
+
+describe("social sign-in (Google)", () => {
+  it("only known providers start, and they return to our callback", async () => {
+    expect(await startOAuth("evil")).toBeNull();
+    const r = await startOAuth("google");
+    expect(r).toMatchObject({ ok: true });
+    if (!r?.ok) throw new Error();
+    expect(decodeURIComponent(r.url)).toMatch(/\/auth\/callback\?next=\/dashboard$/);
+  });
+
+  it("first sign-in provisions one org with the user as owner, exactly once, even when raced", async () => {
+    const email = `g-${randomUUID()}@example.com`;
+    const user = { id: randomUUID(), email };
+    session.accounts.set(email, { user, password: "", verified: true });
+    const results = await Promise.all([completeEmailLink(email), completeEmailLink(email)]);
+    expect(results.every((r) => r.ok)).toBe(true);
+    await completeEmailLink(email);
+    const rows = await privilegedDb()
+      .select()
+      .from(memberships)
+      .where(eq(memberships.userId, user.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.role).toBe("owner");
+    session.actAs(user);
+    expect(await resolveTenant()).toMatchObject({ orgId: rows[0]!.orgId, role: "owner" });
+  });
+
+  it("an existing member signing in through a link gets no extra org", async () => {
+    const t = await createTenant("Has org");
+    session.accounts.set(t.owner.email, { user: t.owner, password: "", verified: true });
+    expect((await completeEmailLink(t.owner.email)).ok).toBe(true);
+    const rows = await privilegedDb()
+      .select()
+      .from(memberships)
+      .where(eq(memberships.userId, t.owner.id));
+    expect(rows).toHaveLength(1);
+  });
+});
+
+describe("renaming the organization", () => {
+  it("changes only the caller's org, through the tenant role, audited; bad names are refused", async () => {
+    const A = await createTenant("Rename A");
+    const B = await createTenant("Rename B");
+    const ctx = {
+      userId: A.owner.id,
+      email: A.owner.email,
+      orgId: A.org.id,
+      role: "owner" as const,
+    };
+    const { withTenant } = await import("@/db/tenant");
+    expect(await withTenant(A.org.id, (t) => renameOrganization(ctx, t, "x"))).toBeNull();
+    expect(await withTenant(A.org.id, (t) => renameOrganization(ctx, t, "  New Name  "))).toBe(
+      "New Name",
+    );
+    const names = await privilegedDb().select().from(organizations);
+    expect(names.find((o) => o.id === A.org.id)!.name).toBe("New Name");
+    expect(names.find((o) => o.id === B.org.id)!.name).toBe(B.org.name);
+    const [audit] = await privilegedDb()
+      .select()
+      .from(auditLogs)
+      .where(and(eq(auditLogs.orgId, A.org.id), eq(auditLogs.action, "org.renamed")));
+    expect(audit!.after).toEqual({ name: "New Name" });
   });
 });

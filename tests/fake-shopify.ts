@@ -68,6 +68,8 @@ export type FakeShop = {
   refuseWebhooks?: number;
 };
 
+const STAGED_HOST = "shopify-staged-uploads.storage.googleapis.com";
+
 let seq = 1000;
 const nextId = () => ++seq;
 
@@ -235,12 +237,27 @@ export class FakeShopify {
     this.shop(domain).accessToken = null;
   }
 
+  /** Bytes received by the staged-upload host, by resourceUrl. */
+  staged = new Map<string, number>();
+  /** GraphQL operations received, in order (operation keyword, e.g. "productSet"). */
+  graphqlOps: string[] = [];
+
   fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = new URL(
       typeof input === "string" ? input : input instanceof URL ? input : input.url,
     );
     const method = (init?.method ?? "GET").toUpperCase();
     this.requests.push({ method, path: url.pathname + url.search });
+    if (url.host === STAGED_HOST) {
+      const form = init?.body as FormData;
+      const file = form.get("file") as Blob | null;
+      if (method !== "POST" || !file || !form.get("key"))
+        return new Response("bad upload", { status: 400 });
+      if (new Headers(init?.headers).has("x-shopify-access-token"))
+        return new Response("token leaked to upload host", { status: 400 });
+      this.staged.set(`https://${STAGED_HOST}/${form.get("key")}`, file.size);
+      return new Response(null, { status: 204 });
+    }
     const shop = this.shops.get(url.host);
     if (!shop) return jsonRes({ errors: "Not Found" }, 404);
     const body = init?.body ? (JSON.parse(String(init.body)) as Json) : {};
@@ -278,13 +295,7 @@ export class FakeShopify {
       return jsonRes({ webhook: hook }, 201);
     }
 
-    if (path === "products.json" && method === "POST")
-      return jsonRes({ product: this.saveProduct(shop, nextId(), body.product as Json) }, 201);
-    if ((m = /^products\/(\d+)\.json$/.exec(path)) && method === "PUT") {
-      const id = Number(m[1]);
-      if (!shop.products.has(id)) return jsonRes({ errors: "Not Found" }, 404);
-      return jsonRes({ product: this.saveProduct(shop, id, body.product as Json) });
-    }
+    if (path === "graphql.json" && method === "POST") return this.graphql(shop, body);
 
     if (path === "orders.json" && method === "GET") return this.listOrders(shop, url);
     if ((m = /^orders\/(\d+)\.json$/.exec(path)) && method === "GET") {
@@ -313,25 +324,121 @@ export class FakeShopify {
     return jsonRes({ errors: "Not Found" }, 404);
   }
 
-  private saveProduct(shop: FakeShop, id: number, input: Json) {
-    const prev = shop.products.get(id);
-    const variants = ((input.variants as Json[]) ?? []).map((v) => {
-      const keep = prev?.variants.find((p) => v.id !== undefined && p.id === v.id);
-      return {
-        ...v,
-        id: keep ? keep.id : nextId(),
-        inventory_item_id: keep ? keep.inventory_item_id : nextId(),
-        product_id: id,
-      };
-    });
-    const images = ((input.images as Json[]) ?? []).map((img) => ({
-      id: nextId(),
-      filename: img.filename,
-      bytes: Buffer.from(String(img.attachment ?? ""), "base64").length,
-    }));
-    const product = { ...prev, ...input, id, variants, images };
-    shop.products.set(id, product);
-    return product;
+  private graphql(shop: FakeShop, body: Json) {
+    const query = String(body.query ?? "");
+    const vars = (body.variables ?? {}) as Json;
+    if (query.includes("stagedUploadsCreate")) {
+      this.graphqlOps.push("stagedUploadsCreate");
+      const input = vars.input as { filename: string; mimeType: string; resource: string }[];
+      return jsonRes({
+        data: {
+          stagedUploadsCreate: {
+            stagedTargets: input.map((f) => {
+              const key = `tmp/${nextId()}/${f.filename}`;
+              return {
+                url: `https://${STAGED_HOST}/`,
+                resourceUrl: `https://${STAGED_HOST}/${key}`,
+                parameters: [
+                  { name: "key", value: key },
+                  { name: "Content-Type", value: f.mimeType },
+                ],
+              };
+            }),
+            userErrors: [],
+          },
+        },
+      });
+    }
+    if (query.includes("productSet")) {
+      this.graphqlOps.push("productSet");
+      const input = vars.input as Json;
+      const identifier = vars.identifier as { id: string } | undefined;
+      const tail = (g: string) => Number(g.slice(g.lastIndexOf("/") + 1));
+      const fail = (message: string) =>
+        jsonRes({
+          data: { productSet: { product: null, userErrors: [{ field: null, message }] } },
+        });
+      const id = identifier ? tail(identifier.id) : nextId();
+      if (identifier && !shop.products.has(id)) return fail("Product does not exist");
+      if (!String(input.title ?? "").trim()) return fail("Title can't be blank");
+      const files = (input.files as { originalSource: string; filename: string }[]) ?? [];
+      for (const f of files)
+        if (!this.staged.has(f.originalSource))
+          return fail(`file not uploaded: ${f.originalSource}`);
+      const prev = shop.products.get(id);
+      const variants = (input.variants as Json[]).map((v) => {
+        const keep = v.id ? prev?.variants.find((p) => p.id === tail(String(v.id))) : undefined;
+        if (v.id && !keep) throw new Error("fake: unknown variant id");
+        return {
+          id: keep ? keep.id : nextId(),
+          inventory_item_id: keep ? keep.inventory_item_id : nextId(),
+          product_id: id,
+          sku: v.sku,
+          price: v.price,
+          option1: (v.optionValues as { name: string }[])[0]!.name,
+        };
+      });
+      const images = files.map((f) => ({
+        id: nextId(),
+        filename: f.filename,
+        bytes: this.staged.get(f.originalSource)!,
+      }));
+      const product = {
+        ...prev,
+        title: input.title,
+        id,
+        variants,
+        images,
+      } as FakeShop["products"] extends Map<number, infer P> ? P : never;
+      shop.products.set(id, product);
+      return jsonRes({
+        data: {
+          productSet: {
+            product: {
+              id: `gid://shopify/Product/${id}`,
+              variants: {
+                nodes: variants.map((v) => ({
+                  id: `gid://shopify/ProductVariant/${v.id}`,
+                  sku: v.sku,
+                  inventoryItem: { id: `gid://shopify/InventoryItem/${v.inventory_item_id}` },
+                })),
+              },
+            },
+            userErrors: [],
+          },
+        },
+      });
+    }
+    if (query.includes("publications(")) {
+      this.graphqlOps.push("publications");
+      return jsonRes({
+        data: {
+          publications: {
+            nodes: [
+              { id: "gid://shopify/Publication/1", name: "Point of Sale" },
+              { id: "gid://shopify/Publication/2", name: "Online Store" },
+            ],
+          },
+        },
+      });
+    }
+    if (query.includes("publishablePublish")) {
+      this.graphqlOps.push("publishablePublish");
+      const id = Number(String(vars.id).split("/").pop());
+      const product = shop.products.get(id);
+      const ok =
+        (vars.input as { publicationId: string }[])[0]?.publicationId ===
+        "gid://shopify/Publication/2";
+      if (product && ok) (product as Json).onlineStore = true;
+      return jsonRes({
+        data: {
+          publishablePublish: {
+            userErrors: product && ok ? [] : [{ field: null, message: "not found" }],
+          },
+        },
+      });
+    }
+    return jsonRes({ errors: [{ message: "fake: unsupported operation" }] });
   }
 
   private listOrders(shop: FakeShop, url: URL) {

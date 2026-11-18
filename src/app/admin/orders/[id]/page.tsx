@@ -1,5 +1,10 @@
 import { notFound } from "next/navigation";
-import { adminGetOrder, adminMarkOrderPaid, adminResolveOrder } from "@/modules/admin";
+import {
+  adminGetOrder,
+  adminMarkOrderPaid,
+  adminRecordShipment,
+  adminResolveOrder,
+} from "@/modules/admin";
 import { OrderDetail } from "../../../orders/order-detail";
 import { adminOrNotFound, formAction, formFields } from "../../guard";
 
@@ -13,6 +18,16 @@ async function markPaid(form: FormData) {
   const id = String(form.get("id"));
   await formAction(pathFor(id), () =>
     adminMarkOrderPaid(admin, id, formFields(form, ["reference", "note"])),
+  );
+}
+
+async function ship(form: FormData) {
+  "use server";
+  const admin = await adminOrNotFound();
+  const id = String(form.get("id"));
+  const f = formFields(form, ["carrier", "trackingNumber", "trackingUrl"]);
+  await formAction(pathFor(id), () =>
+    adminRecordShipment(admin, id, { ...f, trackingUrl: f.trackingUrl || null }),
   );
 }
 
@@ -57,6 +72,22 @@ export default async function AdminOrderPage({
         <form action={resolve}>
           <input type="hidden" name="id" value={order.id} />
           <button type="submit">Re-run line resolution and pricing</button>
+        </form>
+      )}
+      {["submitted", "accepted", "in_production", "packed"].includes(order.status) && (
+        <form action={ship}>
+          <h2>Record shipment manually</h2>
+          <input type="hidden" name="id" value={order.id} />
+          <label>
+            Carrier <input name="carrier" required />
+          </label>
+          <label>
+            Tracking number <input name="trackingNumber" required />
+          </label>
+          <label>
+            Tracking URL <input name="trackingUrl" type="url" />
+          </label>
+          <button type="submit">Mark shipped</button>
         </form>
       )}
       <OrderDetail detail={detail} />
