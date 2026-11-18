@@ -59,6 +59,8 @@ Do these in order. Each one ends with a check.
    - App URL `https://<app>`, redirect URL `https://<app>/api/integrations/shopify/callback`.
    - **Request protected customer data access** (order name, address, email). Without it Shopify
      refuses the order webhooks at connect time and order reads fail.
+   - **Compliance webhooks:** set all three (customer data request, customer data erasure, shop
+     data erasure) to `https://<app>/api/webhooks/shopify`. The app handles them (see Phase D1).
 10. In Supabase Auth → URL configuration: Site URL = the deployed URL; add
     `https://<app>/auth/callback` as a redirect URL (email verification and password reset).
 
@@ -69,7 +71,7 @@ order rows and audit log at each step through the read-only Supabase connection.
 
 | # | Action (where) | Expected result | If not |
 |---|---|---|---|
-| 1 | Sign in as `demo-owner` → `/settings/stores` → connect `<store>.myshopify.com` | Status "Connected" | Audit row `integration.connected` with `webhooks: "failed"` → protected data access (B9) |
+| 1 | Sign in as `demo-owner` → `/settings/stores` → connect `<store>.myshopify.com` | Status "Connected", order webhooks "Active" | Order webhooks "Not subscribed (… HTTP 403)" → protected data access (B9), then "Retry webhooks" |
 | 2 | `/brand-products/<id>` → publish to the store | Product appears in Shopify admin with 2 mockup images | Preflight `storage.*`, then the job's `last_error` |
 | 3 | Shopify admin → Orders → **Create order** with the published product and a real-looking address → **Collect payment → Mark as paid**. Do **not** check out with Bogus Gateway or test-mode payments: Shopify flags those `test: true`, and ingest ignores test orders by design (§9.5) | Within seconds `/orders` shows it `awaiting_payment`; owner gets "Order received" | `webhook_events` row with status `ignored` + reason `test_order` = wrong order type; no row = webhooks not subscribed (B9). The reconciler also picks orders up within 15 min |
 | 4 | Sign in as `demo-admin` → `/admin/orders/<id>` → mark paid | Order → `submitted` | `job_queue` row `fulfillment.order_paid` |
@@ -84,20 +86,30 @@ could show it, the PR says so (the house rule since PR #5).
 
 Ordered by risk to a paying customer, not by size.
 
-1. **Shopify compliance webhooks** (`customers/data_request`, `customers/redact`, `shop/redact`):
-   mandatory for App Store distribution and GDPR. Small; reuses webhook ingress.
-2. **Product publish via GraphQL.** REST product endpoints are legacy, and newer public apps must
-   use GraphQL. The adapter boundary makes this a contained change behind `CommerceProvider`.
-3. **Retry the webhook subscription after connect** instead of only auditing the failure, and
-   show it on `/settings/stores`.
-4. **Dead-letter visibility:** `dead` jobs and `failed` notifications appear in `/admin/review`
-   (today only preflight reports them).
+1. ~~**Shopify compliance webhooks**~~ **Done** (`phase-d`): data requests produce an export the
+   brand owner downloads from an email link; redactions scrub customer data, deferring orders
+   still in transit. Remaining gap: dispatch CSV files already handed to the manufacturer keep
+   addresses (they are the manufacturer's copy; lifecycle rules for our stored copies are D9).
+2. **Product publish via GraphQL.** REST product endpoints are legacy, and new public (App Store)
+   apps must use GraphQL; custom/unlisted apps still work on REST, so this does not block the
+   first order. Deliberately not done blind: images need Shopify's staged-upload flow
+   (`stagedUploadsCreate` → upload to the issued target → `productSet` with `files`), which the
+   adapter's own-shop-only HTTP guard must allow for exactly that target host. Do it with a dev
+   store attached so the fake can be checked against real responses. The change stays inside
+   `src/adapters/shopify` (`pushProduct`); `CommerceProvider` does not change.
+3. ~~**Retry the webhook subscription after connect**~~ **Done** (`phase-d`): failures are
+   recorded on the integration, retried with backoff, and shown on `/settings/stores` with a
+   "Retry webhooks" button.
+4. ~~**Dead-letter visibility**~~ **Done** (`phase-d`): `/admin/review` lists dead jobs (retry or
+   discard) and undelivered emails (retry), audited.
 5. **Vector PDF/X output** with an OutputIntent, replacing the 300 dpi raster, before the first
    print run with a real manufacturer.
 6. **Virus scanning** for uploads (currently a stub that never blocks).
 7. **Real bottle photography** for mockups: data only (`mockup_spec.backgroundAssetId`).
 8. **Live payments** (§10), unblocked when a §18 default is decided; `PaymentProvider` already
    has the seam.
+9. **Retention for dispatch CSVs** in storage: delete our stored copy once a batch is completed
+   and past the claims window, so redacted customers' addresses don't persist there.
 
 ## Decisions the owner still owns
 

@@ -26,6 +26,8 @@ export const integrations = pgTable(
     installedAt: ts("installed_at"),
     lastSyncAt: ts("last_sync_at"),
     ordersSyncedThrough: ts("orders_synced_through"),
+    webhooksSubscribedAt: ts("webhooks_subscribed_at"),
+    webhooksError: text("webhooks_error"),
     ...timestamps,
   },
   (t) => [unique().on(t.provider, t.externalShopId), index().on(t.orgId)],

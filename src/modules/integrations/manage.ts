@@ -27,6 +27,8 @@ export async function disconnectIntegration(ctx: TenantContext, t: TenantDb, id:
     status: "disconnected",
     credentialsCiphertext: null,
     credentialsKeyId: null,
+    webhooksSubscribedAt: null,
+    webhooksError: null,
   }))!;
   await recordAudit(
     {

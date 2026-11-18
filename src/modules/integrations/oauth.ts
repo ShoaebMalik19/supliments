@@ -11,6 +11,7 @@ import { badRequest, json, notFound } from "@/lib/http";
 import { commerce, integrationView } from "./connection";
 import { flagIntegrationConflict, JOB_RECONCILE, shopOwner } from "./privileged";
 import { encryptSecret } from "./secrets";
+import { subscribeOrSchedule, webhookAddress } from "./webhooks";
 
 export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -21,7 +22,6 @@ export function siteUrl(req: Request) {
 }
 
 export const callbackPath = "/api/integrations/shopify/callback";
-export const webhookPath = "/api/webhooks/shopify";
 
 async function ownBrand(t: TenantDb, brandId: string) {
   if (!z.uuid().safeParse(brandId).success) return null;
@@ -153,12 +153,7 @@ export async function completeShopifyInstall(ctx: TenantContext, t: TenantDb, re
       currency: shopInfo.currency,
     });
 
-  let webhooks: "subscribed" | "failed" = "subscribed";
-  try {
-    await provider.subscribeWebhooks(conn, `${siteUrl(req)}${webhookPath}`);
-  } catch {
-    webhooks = "failed";
-  }
+  const webhooks = await subscribeOrSchedule(t, i, webhookAddress(siteUrl(req)));
 
   await enqueue(t, { kind: JOB_RECONCILE, payload: { integrationId: i.id } });
   await recordAudit(

@@ -1,8 +1,13 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { withTenant } from "@/db/tenant";
 import { listBrands } from "@/modules/branding";
-import { disconnectIntegration, listIntegrations } from "@/modules/integrations";
+import {
+  disconnectIntegration,
+  listIntegrations,
+  retryWebhookSubscription,
+} from "@/modules/integrations";
 import { can, requireTenant, resolveTenant } from "@/modules/tenancy";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +17,29 @@ async function disconnect(form: FormData) {
   const ctx = await requireTenant("org:update");
   await withTenant(ctx.orgId, (t) => disconnectIntegration(ctx, t, String(form.get("id"))));
   revalidatePath("/settings/stores");
+}
+
+async function retryWebhooks(form: FormData) {
+  "use server";
+  const ctx = await requireTenant("org:update");
+  const h = await headers();
+  const origin =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    `${h.get("x-forwarded-proto") ?? "https"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
+  await withTenant(ctx.orgId, (t) =>
+    retryWebhookSubscription(ctx, t, String(form.get("id")), origin),
+  );
+  revalidatePath("/settings/stores");
+}
+
+type StoreRow = Awaited<ReturnType<typeof listIntegrations>>[number];
+
+function webhookText(s: StoreRow) {
+  if (s.status !== "connected") return "—";
+  if (s.webhooksSubscribedAt) return `Active since ${s.webhooksSubscribedAt.toISOString()}`;
+  if (s.webhooksError)
+    return `Not subscribed (${s.webhooksError}). Retrying automatically; orders still arrive within 15 minutes through the reconciler.`;
+  return "Not confirmed yet. Retry to subscribe.";
 }
 
 const STATUS_TEXT = {
@@ -53,6 +81,7 @@ export default async function StoresPage({
             <th>Status</th>
             <th>Connected</th>
             <th>Orders synced through</th>
+            <th>Order webhooks</th>
             <th />
           </tr>
         </thead>
@@ -65,9 +94,16 @@ export default async function StoresPage({
               <td>{STATUS_TEXT[s.status]}</td>
               <td>{s.installedAt?.toISOString() ?? "—"}</td>
               <td>{s.ordersSyncedThrough?.toISOString() ?? "never"}</td>
+              <td>{webhookText(s)}</td>
               <td>
                 {manage && s.provider === "shopify" && s.domain && s.status !== "connected" && (
                   <a href={installUrl(s.domain, s.brandId)}>Reconnect</a>
+                )}
+                {manage && s.status === "connected" && !s.webhooksSubscribedAt && (
+                  <form action={retryWebhooks}>
+                    <input type="hidden" name="id" value={s.id} />
+                    <button type="submit">Retry webhooks</button>
+                  </form>
                 )}
                 {manage && s.status !== "disconnected" && (
                   <form action={disconnect}>
@@ -80,7 +116,7 @@ export default async function StoresPage({
           ))}
           {stores.length === 0 && (
             <tr>
-              <td colSpan={5}>No stores connected yet.</td>
+              <td colSpan={6}>No stores connected yet.</td>
             </tr>
           )}
         </tbody>

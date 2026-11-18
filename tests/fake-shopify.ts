@@ -64,6 +64,8 @@ export type FakeShop = {
   fulfillmentOrders: FakeFulfillmentOrder[];
   fulfillments: FakeFulfillment[];
   webhooks: { id: number; topic: string; address: string }[];
+  /** When set, webhook subscription POSTs fail with this HTTP status. */
+  refuseWebhooks?: number;
 };
 
 let seq = 1000;
@@ -269,6 +271,7 @@ export class FakeShopify {
 
     if (path === "webhooks.json" && method === "GET") return jsonRes({ webhooks: shop.webhooks });
     if (path === "webhooks.json" && method === "POST") {
+      if (shop.refuseWebhooks) return jsonRes({ errors: "refused" }, shop.refuseWebhooks);
       const w = body.webhook as { topic: string; address: string };
       const hook = { id: nextId(), topic: w.topic, address: w.address };
       shop.webhooks.push(hook);

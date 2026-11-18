@@ -1,5 +1,6 @@
-import { and, eq, inArray, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, lte, sql } from "drizzle-orm";
 import { after } from "next/server";
+import type { Tx } from "@/db/client";
 import { privilegedDb } from "@/db/privileged";
 import { jobQueue } from "@/db/schema";
 import type { TenantDb } from "@/db/tenant";
@@ -180,4 +181,47 @@ export async function drainJobs(
     }
   }
   return summary;
+}
+
+export type DeadJob = {
+  id: string;
+  orgId: string | null;
+  kind: string;
+  attempts: number;
+  lastError: string | null;
+  updatedAt: Date;
+};
+
+export async function listDeadJobs(limit = 200): Promise<DeadJob[]> {
+  return privilegedDb()
+    .select({
+      id: jobQueue.id,
+      orgId: jobQueue.orgId,
+      kind: jobQueue.kind,
+      attempts: jobQueue.attempts,
+      lastError: jobQueue.lastError,
+      updatedAt: jobQueue.updatedAt,
+    })
+    .from(jobQueue)
+    .where(eq(jobQueue.status, "dead"))
+    .orderBy(desc(jobQueue.updatedAt))
+    .limit(limit);
+}
+
+/**
+ * Operator decision on a dead job: requeue with a fresh attempt budget (handlers are idempotent),
+ * or discard it as `failed`, which nothing ever picks up again. Null unless the job is dead.
+ */
+export async function settleDeadJob(id: string, action: "retry" | "discard", tx?: Tx) {
+  const [job] = await (tx ?? privilegedDb())
+    .update(jobQueue)
+    .set(
+      action === "retry"
+        ? { status: "pending", attempts: 0, runAt: new Date(), lockedAt: null, lockedBy: null }
+        : { status: "failed", completedAt: new Date() },
+    )
+    .where(and(eq(jobQueue.id, id), eq(jobQueue.status, "dead")))
+    .returning({ id: jobQueue.id, orgId: jobQueue.orgId, kind: jobQueue.kind });
+  if (job && action === "retry") kickQueue();
+  return job ?? null;
 }

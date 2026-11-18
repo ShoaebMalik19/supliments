@@ -144,6 +144,14 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
   so order webhooks are notifications only: the job re-fetches the order from the integration's
   own shop (`fetchOrder`) and ignores it if absent. Reconciler polls every 15 min with overlap.
 - Store pushes go through `pushShipmentToStore`/jobs; 401 → `needs_reauth`, pushes halt.
+- Privacy (Shopify compliance webhooks, configured in the Partners app, never via the API):
+  `customers/data_request` → JSON export as an org asset + owner email + review item due in 30
+  days; `customers/redact` / `shop/redact` → redact customer rows, order addresses (keep
+  `countryCode`), fulfillment snapshots and processed webhook payloads. Orders not yet shipped
+  keep their address: the request retries daily and escalates to `/admin/review` after 21 days.
+  The body's `shop_domain` must equal the integration's shop (HMAC covers the body, not the
+  header). Audit rows hold counts only. Each module redacts its own tables
+  (`orders.redactCustomerData`, `fulfillment.redactFulfillmentSnapshots`).
 - `SHOPIFY_API_VERSION` must stay inside Shopify's 12-month support window (a test fails 3 months
   before it ages out). Orders need Partners "protected customer data" access, or order webhooks
   and reads are refused. Dev-store checkouts (Bogus Gateway, test-mode payments) arrive with
@@ -177,8 +185,12 @@ Tests need Postgres: `service postgresql start` locally; CI uses a service conta
 
 - `/settings/stores` (tenant, owner/admin act): connect / reconnect (same OAuth install flow;
   same shop reattaches) / disconnect (drops token, keeps history; app stays installed in Shopify,
-  its webhooks are ignored). `/admin/review`: every open review item with a link to act on;
-  resolve = done | dismissed with an audited note (`admin.resolveReviewItem`).
+  its webhooks are ignored). Webhook subscription state is per integration
+  (`webhooks_subscribed_at` / `webhooks_error`): a failure at connect is retried by job
+  `integrations.subscribe_webhooks` and shown on the page with a "Retry webhooks" action. `/admin/review`: every open review item with a link to act on;
+  resolve = done | dismissed with an audited note (`admin.resolveReviewItem`). The same page lists
+  dead jobs (retry with a fresh attempt budget, or discard → `failed`, never picked up again) and
+  emails that exhausted their attempts (retry); each action is audited (`admin.settleDeadLetter`).
 
 ### Seed + E2E (M6)
 

@@ -32,7 +32,25 @@ export type FulfillmentPush = {
   idempotencyKey: string;
 };
 
-export type WebhookKind = "order" | "app_uninstalled" | "other";
+export type WebhookKind = "order" | "app_uninstalled" | "privacy" | "other";
+
+export type PrivacyCustomer = {
+  externalId: string | null;
+  email: string | null;
+  phone: string | null;
+};
+
+/** A store platform's mandatory privacy request (GDPR/CCPA), in our terms. */
+export type PrivacyRequest =
+  | {
+      type: "customer_data_request";
+      shop: string;
+      requestId: string | null;
+      customer: PrivacyCustomer;
+      externalOrderIds: string[];
+    }
+  | { type: "customer_redact"; shop: string; customer: PrivacyCustomer; externalOrderIds: string[] }
+  | { type: "shop_redact"; shop: string };
 
 export type OrderUpdates = {
   orders: ExternalOrder[];
@@ -69,6 +87,8 @@ export interface CommerceProvider {
     headers: Headers,
   ): { topic: string; kind: WebhookKind; shop: string; eventId: string } | null;
   normalizeOrder(payload: unknown): ExternalOrder | null;
+  /** Null when the topic is not a privacy topic or the payload is unusable. */
+  normalizePrivacyRequest(topic: string, payload: unknown): PrivacyRequest | null;
   pushProduct(conn: StoreConnection, product: PublishProductInput): Promise<PublishedProduct>;
   fetchOrdersUpdatedSince(conn: StoreConnection, since: Date): Promise<ExternalOrder[]>;
   /** The store's own copy of one order (null if the store has no such order). */

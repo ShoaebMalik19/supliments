@@ -92,5 +92,6 @@ export {
   resolveReviewItem,
   type ReviewItemType,
 } from "./review";
+export { listDeadLetters, settleDeadLetter } from "./dead-letters";
 export * from "./fee-schedules";
 export * from "./orders";

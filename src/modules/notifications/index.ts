@@ -1,4 +1,5 @@
-import { and, asc, eq, isNull, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, notInArray, sql } from "drizzle-orm";
+import type { Tx } from "@/db/client";
 import { privilegedDb } from "@/db/privileged";
 import { notifications, outboxEvents } from "@/db/schema";
 import { orgAdminRecipients, userEmail } from "@/modules/tenancy";
@@ -129,4 +130,43 @@ export async function pendingNotificationCount() {
     .from(notifications)
     .where(eq(notifications.status, "pending"));
   return r!.n;
+}
+
+export type FailedNotification = {
+  id: string;
+  orgId: string;
+  template: string;
+  attempts: number;
+  lastError: string | null;
+  updatedAt: Date;
+};
+
+export async function listFailedNotifications(limit = 200): Promise<FailedNotification[]> {
+  return privilegedDb()
+    .select({
+      id: notifications.id,
+      orgId: notifications.orgId,
+      template: notifications.template,
+      attempts: notifications.attempts,
+      lastError: notifications.lastError,
+      updatedAt: notifications.updatedAt,
+    })
+    .from(notifications)
+    .where(eq(notifications.status, "failed"))
+    .orderBy(desc(notifications.updatedAt))
+    .limit(limit);
+}
+
+/** Puts a failed email back in the send queue with a fresh attempt budget. Null unless failed. */
+export async function retryFailedNotification(id: string, tx?: Tx) {
+  const [n] = await (tx ?? privilegedDb())
+    .update(notifications)
+    .set({ status: "pending", attempts: 0 })
+    .where(and(eq(notifications.id, id), eq(notifications.status, "failed")))
+    .returning({
+      id: notifications.id,
+      orgId: notifications.orgId,
+      template: notifications.template,
+    });
+  return n ?? null;
 }
